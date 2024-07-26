@@ -12,7 +12,7 @@ from ring.utils import replace_elements_w_nans
 import tree_utils
 import wandb
 
-from full.exp_cbs import make_exp_callbacks
+from exp_cbs import make_exp_callbacks
 
 dropout_rates = dict(
     seg3_1Seg=(0.0, 1.0),
@@ -251,6 +251,7 @@ def _make_ring(lam, params_warmstart: str | None, dry_run: bool):
         params=params_warmstart,
     )
     ringnet = ml.base.ScaleX_FilterWrapper(ringnet)
+    ringnet = ml.base.GroundTruthHeading_FilterWrapper(ringnet)
     return ringnet
 
 
