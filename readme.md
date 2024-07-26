@@ -1,0 +1,15 @@
+# Retraining of `RING`
+
+After the installation steps, you can use the two files `train_*.py` to
+1) Create training data using `train_step1_generateData.py`. Use `python train_step1_generateData.py --help` for documentation.
+    Example: `python train_step1_generateData.py train_xmls/lam1.xml 16`
+
+    For retraining of RING (creates ~700 GBs of data!!!) run:
+    - file1: `python train_step1_generateData.py train_xmls/lam1.xml 131072 "[standard, expSlow, expFast, hinUndHer]" --seed 1 --sampling-rates "[40, 60, 80, 100, 120, 140, 160, 180, 200]"`
+    - file2: `python train_step1_generateData.py train_xmls/lam2.xml 131072 "[standard, expSlow, expFast, hinUndHer]" --anchors "[seg3_2Seg, seg4_2Seg]" --imu-motion-artifacts --seed 2 --sampling-rates "[40, 60, 80, 100, 120, 140, 160, 180, 200]"`
+    - file3: `python train_step1_generateData.py train_xmls/lam3.xml 131072 "[standard, expSlow, expFast, hinUndHer]" --anchors "[seg3_3Seg, seg5_3Seg]" --imu-motion-artifacts --seed 3 --sampling-rates "[40, 60, 80, 100, 120, 140, 160, 180, 200]"`
+    - file4: `python train_step1_generateData.py train_xmls/lam4.xml 131072 "[standard, expSlow, expFast, hinUndHer]" --anchors "[seg2_4Seg, seg3_4Seg, seg4_4Seg, seg5_4Seg]" --imu-motion-artifacts --seed 4 --sampling-rates "[40, 60, 80, 100, 120, 140, 160, 180, 200]"`
+
+2) (Re)Train RING using `train_step2_trainRing.py`. Use `python train_step2_trainRing.py --help` for documentation.
+
+    For retraining of RING: `python train_step2_trainRing.py path_file1 path_file2 path_file3 path_file4 512 4800 ~/params/trained_ring_params.pickle`
