@@ -2,6 +2,7 @@ import fire
 import jax
 import jax.numpy as jnp
 import numpy as np
+import qmt
 import ring
 from ring import maths
 from ring import ml
@@ -113,14 +114,13 @@ def _expand_dt(X: dict, T: int):
     for seg in link_names:
         new_name = str(link_names.index(seg))
         dt = X[f"dt_{seg[5:10]}"]
-        X[new_name]["dt"] = jnp.repeat(dt[:, None, None], T, axis=1)
+        X[new_name]["dt"] = np.repeat(dt[:, None, None], T, axis=1)
     for i in range(1, 5):
         X.pop(f"dt_{i}Seg")
     return X
 
 
-def _expand_then_flatten(Xy):
-    X, y = Xy
+def _expand_then_flatten(X, y):
     gyr = X["0"]["gyr"]
 
     batched = True
@@ -175,24 +175,46 @@ def c_to_eps_TO_c_to_parent(lam, y):
     return y_i_to_p
 
 
-def randomize_imus(key, X, y, imus: jax.Array):
-    print("JIT-Compiling `randomize_imus`")
-    B, T, N, F = X.shape
-    # segment to IMU
-    qrand = maths.quat_random(key, (B, N))
-    unit_quats = maths.unit_quats_like(qrand)
-    # (bs, 10) -> (bs, 10, 4)
-    imus = jnp.repeat(imus[..., None], 4, axis=-1)
-    qrand = jnp.where(imus, qrand, unit_quats)
-    qrand = jnp.repeat(qrand[:, None], T, axis=1)
+def rand_quats(imu_available) -> np.ndarray:
+    "Returns array (B, 10, 4)"
+    B = imu_available.shape[0]
+    qrand = qmt.randomQuat((B, 10))
+    qrand[~imu_available.astype(bool)] = np.array([1.0, 0, 0, 0])
+    return qrand
 
-    X = X.at[..., :3].set(maths.rotate(X[..., :3], qrand))
-    X = X.at[..., 3:6].set(maths.rotate(X[..., 3:6], qrand))
-    X = X.at[..., 6:9].set(maths.rotate(X[..., 6:9], qrand))
+
+def pmap(f):
+    pmap_f = jax.pmap(f)
+
+    def _f(*args):
+        B = tree_utils.tree_shape(args)
+        sizes = utils.distribute_batchsize(B)
+        args = utils.expand_batchsize(args, *sizes)
+        out = pmap_f(*args)
+        return utils.merge_batchsize(out, *sizes)
+
+    return _f
+
+
+def _rotate(qrand, vec):
+    assert qrand.shape[1:] == (10, 4)
+    return jax.vmap(maths.rotate, (1, None), out_axes=1)(vec, qrand)
+
+
+@pmap
+def rotate_X(qrand, X):
+    X_0to3 = _rotate(qrand, X[..., :3])
+    X_3to6 = _rotate(qrand, X[..., 3:6])
+    X_6to9 = _rotate(qrand, X[..., 6:9])
+    return jnp.concatenate((X_0to3, X_3to6, X_6to9, X[..., 9:10]), axis=-1)
+
+
+@pmap
+def rotate_y(qrand, y):
 
     y = _qinv_root(lam, y)
     y = c_to_parent_TO_c_to_eps(lam, y)
-    y = maths.quat_mul(y, maths.quat_inv(qrand))
+    y = jax.vmap(maths.quat_mul, (1, None), 1)(y, maths.quat_inv(qrand))
     y = c_to_eps_TO_c_to_parent(lam, y)
     y = _qinv_root(lam, y)
 
@@ -201,7 +223,8 @@ def randomize_imus(key, X, y, imus: jax.Array):
             y = y.at[:, :, i].set(
                 maths.quat_project(y[:, :, i], jnp.array([0, 0, 1.0]))[1]
             )
-    return X, y
+
+    return y
 
 
 def output_transform_factory(link_names, batchsize: int, do_randomize_imus: bool):
@@ -230,30 +253,17 @@ def output_transform_factory(link_names, batchsize: int, do_randomize_imus: bool
 
         _rename_links(X)
         _rename_links(y)
-        factor_imus = jnp.concatenate(factor_imus).T
+        factor_imus = np.concatenate(factor_imus).T
         assert factor_imus.shape == (
             batchsize,
             10,
         ), f"{factor_imus.shape} != {(batchsize, 10)}"
 
-        X, y = jax.tree.map(jnp.asarray, (X, y))
-        sizes = utils.distribute_batchsize(batchsize)
-        X, y = utils.expand_batchsize((X, y), *sizes)
-        X, y = jax.pmap(_expand_then_flatten)((X, y))
-        X, y = utils.merge_batchsize((X, y), *sizes)
+        X, y = _expand_then_flatten(X, y)
         if do_randomize_imus:
-            key = jax.random.PRNGKey(np.random.randint(1, 1_000_000))
-            keys = jax.random.split(key, sizes[0])
-            X, y, factor_imus = utils.expand_batchsize((X, y, factor_imus), *sizes)
-            X, y = jax.pmap(randomize_imus)(
-                keys,
-                X,
-                y,
-                factor_imus,
-            )
-            return utils.merge_batchsize((X, y), *sizes)
-        else:
-            return X, y
+            qrand = rand_quats(factor_imus)
+            X, y = rotate_X(qrand, X), rotate_y(qrand, y)
+        return X, y
 
     return output_transform
 
@@ -365,7 +375,7 @@ def main(
         callback_kill_if_nan=True,
         callback_kill_if_grads_larger=1e32,
         callback_save_params=path_trained_params,
-        callback_save_params_track_metrices=[["exp_val_mae_deg"]],
+        callback_save_params_track_metrices=[["exp_val_mae_deg"]] if exp_cbs else None,
         seed_network=seed,
         link_names=link_names,
     )
