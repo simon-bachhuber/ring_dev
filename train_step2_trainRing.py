@@ -5,9 +5,8 @@ import numpy as np
 import ring
 from ring import maths
 from ring import ml
+from ring import utils
 from ring.algorithms.generator.finalize_fns import GeneratorTrafoLambda
-from ring.utils import pickle_load
-from ring.utils import replace_elements_w_nans
 import tree_utils
 import wandb
 
@@ -27,7 +26,6 @@ dropout_rates = dict(
     seg5_4Seg=(0.0, 1 / 4),
 )
 lam = [-1, -1, 1, -1, 3, 4, -1, 6, 7, 8]
-tuple_lam = tuple(lam)
 link_names = [
     "seg3_1Seg",
     "seg3_2Seg",
@@ -51,11 +49,11 @@ def load_data(
     "Returns list of data of 10-body system"
 
     def loader(path):
-        Xy = pickle_load(path)
+        Xy = utils.pickle_load(path)
         # convert batch axis to list
         N = tree_utils.tree_shape(Xy)
         Xy = [jax.tree.map(lambda a: a[i], Xy) for i in range(N)]
-        return replace_elements_w_nans(Xy, verbose=1)
+        return utils.replace_elements_w_nans(Xy, verbose=1)
 
     # 4xN
     data_in = [loader(p) for p in [path_lam1, path_lam2, path_lam3, path_lam4]]
@@ -177,7 +175,7 @@ def c_to_eps_TO_c_to_parent(lam, y):
     return y_i_to_p
 
 
-def randomize_imus(lam, key, X, y, imus: jax.Array):
+def randomize_imus(key, X, y, imus: jax.Array):
     print("JIT-Compiling `randomize_imus`")
     B, T, N, F = X.shape
     # segment to IMU
@@ -239,15 +237,21 @@ def output_transform_factory(link_names, batchsize: int, do_randomize_imus: bool
         ), f"{factor_imus.shape} != {(batchsize, 10)}"
 
         X, y = jax.tree.map(jnp.asarray, (X, y))
-        X, y = jax.jit(_expand_then_flatten)((X, y))
+        sizes = utils.distribute_batchsize(batchsize)
+        X, y = utils.expand_batchsize((X, y), *sizes)
+        X, y = jax.pmap(_expand_then_flatten)((X, y))
+        X, y = utils.merge_batchsize((X, y), *sizes)
         if do_randomize_imus:
-            return jax.jit(randomize_imus, static_argnums=0)(
-                tuple_lam,
-                jax.random.PRNGKey(np.random.randint(1, 1_000_000)),
+            key = jax.random.PRNGKey(np.random.randint(1, 1_000_000))
+            keys = jax.random.split(key, sizes[0])
+            X, y, factor_imus = utils.expand_batchsize((X, y, factor_imus), *sizes)
+            X, y = jax.pmap(randomize_imus)(
+                keys,
                 X,
                 y,
                 factor_imus,
             )
+            return utils.merge_batchsize((X, y), *sizes)
         else:
             return X, y
 
