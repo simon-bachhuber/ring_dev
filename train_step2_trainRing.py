@@ -2,7 +2,6 @@ import fire
 import jax
 import jax.numpy as jnp
 import numpy as np
-import qmt
 import ring
 from ring import maths
 from ring import ml
@@ -28,6 +27,7 @@ dropout_rates = dict(
     seg5_4Seg=(0.0, 1 / 4),
 )
 lam = [-1, -1, 1, -1, 3, 4, -1, 6, 7, 8]
+tuple_lam = tuple(lam)
 link_names = [
     "seg3_1Seg",
     "seg3_2Seg",
@@ -54,7 +54,7 @@ def load_data(
         Xy = pickle_load(path)
         # convert batch axis to list
         N = tree_utils.tree_shape(Xy)
-        Xy = [jax.tree_map(lambda a: a[i], Xy) for i in range(N)]
+        Xy = [jax.tree.map(lambda a: a[i], Xy) for i in range(N)]
         return replace_elements_w_nans(Xy, verbose=1)
 
     # 4xN
@@ -108,14 +108,14 @@ def train_val_split(
 def _flatten(seq: list):
     seq = tree_utils.tree_batch(seq, backend=None)
     seq = tree_utils.batch_concat_acme(seq, num_batch_dims=3).transpose((1, 2, 0, 3))
-    return np.array(seq)
+    return seq
 
 
 def _expand_dt(X: dict, T: int):
     for seg in link_names:
         new_name = str(link_names.index(seg))
         dt = X[f"dt_{seg[5:10]}"]
-        X[new_name]["dt"] = np.repeat(dt[:, None, None], T, axis=1)
+        X[new_name]["dt"] = jnp.repeat(dt[:, None, None], T, axis=1)
     for i in range(1, 5):
         X.pop(f"dt_{i}Seg")
     return X
@@ -146,14 +146,14 @@ def _expand_then_flatten(Xy):
     y = [y[str(i)] for i in range(N)]
     X, y = _flatten(X), _flatten(y)
     if not batched:
-        X, y = jax.tree_map(lambda arr: arr[0], (X, y))
+        X, y = jax.tree.map(lambda arr: arr[0], (X, y))
     return X, y
 
 
 def _qinv_root(lam, y):
     for i, p in enumerate(lam):
         if p == -1:
-            y[:, :, i] = qmt.qinv(y[:, :, i])
+            y = y.at[:, :, i].set(maths.quat_inv(y[:, :, i]))
     return y
 
 
@@ -162,7 +162,7 @@ def c_to_parent_TO_c_to_eps(lam, y):
     for i, p in enumerate(lam):
         if p == -1:
             continue
-        y[:, :, i] = qmt.qmult(y[:, :, p], y[:, :, i])
+        y = y.at[:, :, i].set(maths.quat_mul(y[:, :, p], y[:, :, i]))
     return y
 
 
@@ -171,34 +171,38 @@ def c_to_eps_TO_c_to_parent(lam, y):
     for i, p in enumerate(lam):
         if p == -1:
             continue
-        y_i_to_p[:, :, i] = qmt.qmult(qmt.qinv(y[:, :, p]), y[:, :, i])
+        y_i_to_p = y_i_to_p.at[:, :, i].set(
+            maths.quat_mul(maths.quat_inv(y[:, :, p]), y[:, :, i])
+        )
     return y_i_to_p
 
 
-def randomize_imus(lam, X, y, imus: np.ndarray):
+def randomize_imus(lam, key, X, y, imus: jax.Array):
+    print("JIT-Compiling `randomize_imus`")
     B, T, N, F = X.shape
     # segment to IMU
-    qrand = qmt.randomQuat((B, N))
-    unit_quats = np.zeros((B, N, 4))
-    unit_quats[..., 0] = 1.0
+    qrand = maths.quat_random(key, (B, N))
+    unit_quats = maths.unit_quats_like(qrand)
     # (bs, 10) -> (bs, 10, 4)
-    imus = np.repeat(imus[..., None], 4, axis=-1)
-    qrand = np.where(imus, qrand, unit_quats)
-    qrand = np.repeat(qrand[:, None], T, axis=1)
+    imus = jnp.repeat(imus[..., None], 4, axis=-1)
+    qrand = jnp.where(imus, qrand, unit_quats)
+    qrand = jnp.repeat(qrand[:, None], T, axis=1)
 
-    X[..., :3] = qmt.rotate(qrand, X[..., :3])
-    X[..., 3:6] = qmt.rotate(qrand, X[..., 3:6])
-    X[..., 6:9] = qmt.rotate(qrand, X[..., 6:9])
+    X = X.at[..., :3].set(maths.rotate(X[..., :3], qrand))
+    X = X.at[..., 3:6].set(maths.rotate(X[..., 3:6], qrand))
+    X = X.at[..., 6:9].set(maths.rotate(X[..., 6:9], qrand))
 
     y = _qinv_root(lam, y)
     y = c_to_parent_TO_c_to_eps(lam, y)
-    y = qmt.qmult(y, qmt.qinv(qrand))
+    y = maths.quat_mul(y, maths.quat_inv(qrand))
     y = c_to_eps_TO_c_to_parent(lam, y)
     y = _qinv_root(lam, y)
 
     for i, p in enumerate(lam):
         if p == -1:
-            y[:, :, i] = ring.maths.quat_project(y[:, :, i], np.array([0, 0, 1.0]))[1]
+            y = y.at[:, :, i].set(
+                maths.quat_project(y[:, :, i], jnp.array([0, 0, 1.0]))[1]
+            )
     return X, y
 
 
@@ -228,14 +232,22 @@ def output_transform_factory(link_names, batchsize: int, do_randomize_imus: bool
 
         _rename_links(X)
         _rename_links(y)
-        factor_imus = np.concatenate(factor_imus).T
+        factor_imus = jnp.concatenate(factor_imus).T
         assert factor_imus.shape == (
             batchsize,
             10,
         ), f"{factor_imus.shape} != {(batchsize, 10)}"
-        X, y = _expand_then_flatten((X, y))
+
+        X, y = jax.tree.map(jnp.asarray, (X, y))
+        X, y = jax.jit(_expand_then_flatten)((X, y))
         if do_randomize_imus:
-            return randomize_imus(lam, X, y, factor_imus)
+            return jax.jit(randomize_imus, static_argnums=0)(
+                tuple_lam,
+                jax.random.PRNGKey(np.random.randint(1, 1_000_000)),
+                X,
+                y,
+                factor_imus,
+            )
         else:
             return X, y
 
@@ -349,6 +361,7 @@ def main(
         callback_kill_if_nan=True,
         callback_kill_if_grads_larger=1e32,
         callback_save_params=path_trained_params,
+        callback_save_params_track_metrices=[["exp_val_mae_deg"]],
         seed_network=seed,
         link_names=link_names,
     )
