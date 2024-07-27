@@ -150,9 +150,11 @@ def _expand_then_flatten(Xy):
     return X, y
 
 
-def rand_quat(shape=()) -> np.ndarray:
-    q = np.random.normal(size=shape + (4,))
-    return q / np.linalg.norm(q, axis=-1, keepdims=True)
+def _qinv_root(lam, y):
+    for i, p in enumerate(lam):
+        if p == -1:
+            y[:, :, i] = qmt.qinv(y[:, :, i])
+    return y
 
 
 def c_to_parent_TO_c_to_eps(lam, y):
@@ -176,28 +178,27 @@ def c_to_eps_TO_c_to_parent(lam, y):
 def randomize_imus(lam, X, y, imus: np.ndarray):
     B, T, N, F = X.shape
     # segment to IMU
-    qrand = rand_quat((B, N))
+    qrand = qmt.randomQuat((B, N))
     unit_quats = np.zeros((B, N, 4))
     unit_quats[..., 0] = 1.0
     # (bs, 10) -> (bs, 10, 4)
     imus = np.repeat(imus[..., None], 4, axis=-1)
     qrand = np.where(imus, qrand, unit_quats)
     qrand = np.repeat(qrand[:, None], T, axis=1)
+
     X[..., :3] = qmt.rotate(qrand, X[..., :3])
     X[..., 3:6] = qmt.rotate(qrand, X[..., 3:6])
     X[..., 6:9] = qmt.rotate(qrand, X[..., 6:9])
+
+    y = _qinv_root(lam, y)
     y = c_to_parent_TO_c_to_eps(lam, y)
-    y = qmt.qinv(y)
-    y = qmt.qmult(qrand, y)
-    y = qmt.qinv(y)
+    y = qmt.qmult(y, qmt.qinv(qrand))
     y = c_to_eps_TO_c_to_parent(lam, y)
+    y = _qinv_root(lam, y)
+
     for i, p in enumerate(lam):
         if p == -1:
-            i_to_eps = y[:, :, i]
-            eps_to_i = ring.maths.quat_project(
-                qmt.qinv(i_to_eps), np.array([0, 0, 1.0])
-            )[1]
-            y[:, :, i] = qmt.qinv(eps_to_i)
+            y[:, :, i] = ring.maths.quat_project(y[:, :, i], np.array([0, 0, 1.0]))[1]
     return X, y
 
 
