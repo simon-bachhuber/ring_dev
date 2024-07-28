@@ -2,9 +2,11 @@ import os
 from typing import Callable, Optional
 
 import numpy as np
+import ring
 from ring import utils
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
+import tqdm
 import tree_utils
 
 T = tree_utils.PyTree[np.ndarray]
@@ -61,3 +63,11 @@ def pytorch_generator(
             return next(dl_iter)
 
     return generator
+
+
+def eager_generator(
+    *paths, batch_size: int, transform: Optional[Callable[[T], T]] = None
+):
+    ds = _Dataset(*paths, transform=transform)
+    data = [ds[i] for i in tqdm.tqdm(range(len(ds)), total=len(ds))]
+    return ring.RCMG.eager_gen_from_list(data, batch_size)

@@ -10,8 +10,8 @@ import tree as tree_lib
 import tree_utils
 import wandb
 
+import dataloader
 from exp_cbs import make_exp_callbacks
-from torch_dataloader import pytorch_generator
 
 dropout_rates = dict(
     seg3_1Seg=(0.0, 1.0),
@@ -234,7 +234,6 @@ def main(
     dry_run: bool = False,
     exp_cbs: bool = False,
     rand_imus: bool = False,
-    num_workers: int = 0,
 ):
     """Train RING using data from step1.
 
@@ -267,14 +266,13 @@ def main(
 
     ringnet = _make_ring(lam, params_warmstart, dry_run)
 
-    generator = pytorch_generator(
+    generator = dataloader.eager_generator(
         path_lam1,
         path_lam2,
         path_lam3,
         path_lam4,
         batch_size=bs,
         transform=Transform(rand_imus),
-        num_workers=num_workers,
     )
 
     _mae_metrices = dict(
