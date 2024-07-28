@@ -168,13 +168,11 @@ def make_10_body_system(data: list) -> tuple:
     return X, y
 
 
-def transform_factory(rand_imus):
-    def _rename_links(d: dict[str, dict]):
-        for key in list(d.keys()):
-            if key in link_names:
-                d[str(link_names.index(key))] = d.pop(key)
+class Transform:
+    def __init__(self, rand_imus: bool):
+        self.rand_imus = rand_imus
 
-    def transform(data: list):
+    def __call__(self, data: list):
         X, y = make_10_body_system(data)
         draw = lambda p: np.array(np.random.binomial(1, p), dtype=float)
 
@@ -188,19 +186,23 @@ def transform_factory(rand_imus):
             X[segments]["gyr"] *= factor_imu
             X[segments]["joint_axes"] *= factor_ja
 
-        _rename_links(X)
-        _rename_links(y)
+        self._rename_links(X)
+        self._rename_links(y)
         factor_imus = np.concatenate(factor_imus).T
         assert factor_imus.shape == (10,), f"{factor_imus.shape} != (10,)"
 
         X, y = _expand_then_flatten(X, y)
-        if rand_imus:
+        if self.rand_imus:
             qrand = rand_quats(factor_imus)
             rotate_X_(qrand, X)
             y = rotate_y(qrand, y)
         return X, y
 
-    return transform
+    @staticmethod
+    def _rename_links(d: dict[str, dict]):
+        for key in list(d.keys()):
+            if key in link_names:
+                d[str(link_names.index(key))] = d.pop(key)
 
 
 def _make_ring(lam, params_warmstart: str | None, dry_run: bool):
@@ -271,7 +273,7 @@ def main(
         path_lam3,
         path_lam4,
         batch_size=bs,
-        transform=transform_factory(rand_imus),
+        transform=Transform(rand_imus),
         num_workers=num_workers,
     )
 

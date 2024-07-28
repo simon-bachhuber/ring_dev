@@ -35,6 +35,10 @@ class _Dataset(Dataset):
         return [utils.parse_path(path, file) for file in os.listdir(path)]
 
 
+def _collate_fn(data: list[T]) -> T:
+    return tree_utils.tree_batch(data)
+
+
 def pytorch_generator(
     *paths,
     batch_size: int,
@@ -42,13 +46,10 @@ def pytorch_generator(
     **kwargs,
 ):
 
-    def collate_fn(data: list[T]) -> T:
-        return tree_utils.tree_batch(data)
-
     ds = _Dataset(*paths, transform=transform)
     _kwargs = dict(shuffle=True)
     _kwargs.update(kwargs)
-    dl = DataLoader(ds, batch_size=batch_size, collate_fn=collate_fn, **_kwargs)
+    dl = DataLoader(ds, batch_size=batch_size, collate_fn=_collate_fn, **_kwargs)
     dl_iter = iter(dl)
 
     def generator(_):
