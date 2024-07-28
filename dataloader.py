@@ -1,3 +1,4 @@
+from concurrent import futures
 import os
 from typing import Callable, Optional
 
@@ -36,6 +37,9 @@ class _Dataset(Dataset):
     def listdir(path: str) -> list:
         return [utils.parse_path(path, file) for file in os.listdir(path)]
 
+    def __call__(self, idx: int):
+        return self[idx]
+
 
 def _collate_fn(data: list[T]) -> T:
     return tree_utils.tree_batch(data)
@@ -69,5 +73,8 @@ def eager_generator(
     *paths, batch_size: int, transform: Optional[Callable[[T], T]] = None
 ):
     ds = _Dataset(*paths, transform=transform)
-    data = [ds[i] for i in tqdm.tqdm(range(len(ds)), total=len(ds))]
+    with futures.ProcessPoolExecutor() as exec:
+        data = list(exec.map(ds, range(len(ds))))
+
+    # data = [ds[i] for i in tqdm.tqdm(range(len(ds)), total=len(ds))]
     return ring.RCMG.eager_gen_from_list(data, batch_size)
