@@ -148,14 +148,29 @@ def _expand_then_flatten(X, y):
     return X, y
 
 
-def _qinv_root(lam, y):
+def pmap(f):
+    pmap_f = jax.pmap(f)
+
+    def _f(*args):
+        B = tree_utils.tree_shape(args)
+        sizes = utils.distribute_batchsize(B)
+        args = utils.expand_batchsize(args, *sizes)
+        out = pmap_f(*args)
+        return utils.merge_batchsize(out, *sizes)
+
+    return _f
+
+
+@pmap
+def _qinv_root(y):
     for i, p in enumerate(lam):
         if p == -1:
             y = y.at[:, :, i].set(maths.quat_inv(y[:, :, i]))
     return y
 
 
-def c_to_parent_TO_c_to_eps(lam, y):
+@pmap
+def c_to_parent_TO_c_to_eps(y):
     y = y.copy()
     for i, p in enumerate(lam):
         if p == -1:
@@ -164,7 +179,8 @@ def c_to_parent_TO_c_to_eps(lam, y):
     return y
 
 
-def c_to_eps_TO_c_to_parent(lam, y):
+@pmap
+def c_to_eps_TO_c_to_parent(y):
     y_i_to_p = y.copy()
     for i, p in enumerate(lam):
         if p == -1:
@@ -183,25 +199,12 @@ def rand_quats(imu_available) -> np.ndarray:
     return qrand
 
 
-def pmap(f):
-    pmap_f = jax.pmap(f)
-
-    def _f(*args):
-        B = tree_utils.tree_shape(args)
-        sizes = utils.distribute_batchsize(B)
-        args = utils.expand_batchsize(args, *sizes)
-        out = pmap_f(*args)
-        return utils.merge_batchsize(out, *sizes)
-
-    return _f
-
-
+@pmap
 def _rotate(qrand, vec):
     assert qrand.shape[1:] == (10, 4)
     return jax.vmap(maths.rotate, (1, None), out_axes=1)(vec, qrand)
 
 
-@pmap
 def rotate_X(qrand, X):
     X_0to3 = _rotate(qrand, X[..., :3])
     X_3to6 = _rotate(qrand, X[..., 3:6])
@@ -209,14 +212,13 @@ def rotate_X(qrand, X):
     return jnp.concatenate((X_0to3, X_3to6, X_6to9, X[..., 9:10]), axis=-1)
 
 
-@pmap
 def rotate_y(qrand, y):
 
-    y = _qinv_root(lam, y)
-    y = c_to_parent_TO_c_to_eps(lam, y)
+    y = _qinv_root(y)
+    y = c_to_parent_TO_c_to_eps(y)
     y = jax.vmap(maths.quat_mul, (1, None), 1)(y, maths.quat_inv(qrand))
-    y = c_to_eps_TO_c_to_parent(lam, y)
-    y = _qinv_root(lam, y)
+    y = c_to_eps_TO_c_to_parent(y)
+    y = _qinv_root(y)
 
     for i, p in enumerate(lam):
         if p == -1:
