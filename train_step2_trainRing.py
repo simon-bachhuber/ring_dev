@@ -6,7 +6,6 @@ import qmt
 import ring
 from ring import maths
 from ring import ml
-from ring import utils
 import tree as tree_lib
 import tree_utils
 import wandb
@@ -40,70 +39,6 @@ link_names = [
     "seg4_4Seg",
     "seg5_4Seg",
 ]
-
-
-def load_data(
-    path_lam1,
-    path_lam2,
-    path_lam3,
-    path_lam4,
-) -> list:
-    "Returns list of data of 10-body system"
-
-    def loader(path):
-        Xy = utils.pickle_load(path)
-        # convert batch axis to list
-        N = tree_utils.tree_shape(Xy)
-        Xy = [jax.tree.map(lambda a: a[i], Xy) for i in range(N)]
-        return utils.replace_elements_w_nans(Xy, verbose=1)
-
-    # 4xN
-    data_in = [loader(p) for p in [path_lam1, path_lam2, path_lam3, path_lam4]]
-    # convert to Nx4
-    N = min([len(ele) for ele in data_in])
-    data_out = []
-    for i in range(N):
-        data_out.append([ele[i] for ele in data_in])
-        for j in range(4):
-            data_in[j][i] = None
-    del data_in
-
-    # combine to 10-body system
-    for i in range(N):
-        data_i = data_out[i]
-        dts = {f"dt_{j + 1}Seg": data_i[j][0].pop("dt") for j in range(4)}
-        X, y = dts, {}
-        for j in range(4):
-            X.update(data_i[j][0])
-            y.update(data_i[j][1])
-        data_out[i] = (X, y)
-
-    print("Number of sequences: ", N)
-
-    return data_out
-
-
-def train_val_split(
-    data: list,
-    bs: int,
-    transform,
-):
-
-    n_batches_for_val = 1
-    len_val = n_batches_for_val * bs
-    train_data, val_data = data[:-len_val], data[-len_val:]
-
-    X_val, y_val = pytorch_generator(val_data, len_val, transform=transform)(None)
-
-    generator = pytorch_generator(
-        train_data,
-        bs,
-        transform=transform,
-        use_futures=True,
-        future_max_workers=32 if ml.on_cluster() else 1,
-    )
-
-    return generator, (X_val, y_val)
 
 
 def batch_concat_acme(
@@ -223,37 +158,49 @@ def rotate_y(qrand, y):
     return y
 
 
-def _rename_links(d: dict[str, dict]):
-    for key in list(d.keys()):
-        if key in link_names:
-            d[str(link_names.index(key))] = d.pop(key)
+def make_10_body_system(data: list) -> tuple:
 
-
-def transform(tree):
-    X, y = tree
-    draw = lambda p: np.array(np.random.binomial(1, p), dtype=float)
-
-    factor_imus = []
-    for segments, (imu_rate, jointaxes_rate) in dropout_rates.items():
-        factor_imu = draw(1 - imu_rate)
-        factor_imus.append(factor_imu[None])
-        factor_ja = draw(1 - jointaxes_rate)
-
-        X[segments]["acc"] *= factor_imu
-        X[segments]["gyr"] *= factor_imu
-        X[segments]["joint_axes"] *= factor_ja
-
-    _rename_links(X)
-    _rename_links(y)
-    factor_imus = np.concatenate(factor_imus).T
-    assert factor_imus.shape == (10,), f"{factor_imus.shape} != (10,)"
-
-    X, y = _expand_then_flatten(X, y)
-    if True:
-        qrand = rand_quats(factor_imus)
-        rotate_X_(qrand, X)
-        y = rotate_y(qrand, y)
+    dts = {f"dt_{j + 1}Seg": data[j][0].pop("dt") for j in range(4)}
+    X, y = dts, {}
+    for j in range(4):
+        X.update(data[j][0])
+        y.update(data[j][1])
     return X, y
+
+
+def transform_factory(rand_imus):
+    def _rename_links(d: dict[str, dict]):
+        for key in list(d.keys()):
+            if key in link_names:
+                d[str(link_names.index(key))] = d.pop(key)
+
+    def transform(data: list):
+        X, y = make_10_body_system(data)
+        draw = lambda p: np.array(np.random.binomial(1, p), dtype=float)
+
+        factor_imus = []
+        for segments, (imu_rate, jointaxes_rate) in dropout_rates.items():
+            factor_imu = draw(1 - imu_rate)
+            factor_imus.append(factor_imu[None])
+            factor_ja = draw(1 - jointaxes_rate)
+
+            X[segments]["acc"] *= factor_imu
+            X[segments]["gyr"] *= factor_imu
+            X[segments]["joint_axes"] *= factor_ja
+
+        _rename_links(X)
+        _rename_links(y)
+        factor_imus = np.concatenate(factor_imus).T
+        assert factor_imus.shape == (10,), f"{factor_imus.shape} != (10,)"
+
+        X, y = _expand_then_flatten(X, y)
+        if rand_imus:
+            qrand = rand_quats(factor_imus)
+            rotate_X_(qrand, X)
+            y = rotate_y(qrand, y)
+        return X, y
+
+    return transform
 
 
 def _make_ring(lam, params_warmstart: str | None, dry_run: bool):
@@ -284,7 +231,8 @@ def main(
     seed: int = 1,
     dry_run: bool = False,
     exp_cbs: bool = False,
-    # rand_imus: bool = False,
+    rand_imus: bool = False,
+    num_workers: int = 0,
 ):
     """Train RING using data from step1.
 
@@ -317,8 +265,15 @@ def main(
 
     ringnet = _make_ring(lam, params_warmstart, dry_run)
 
-    data = load_data(path_lam1, path_lam2, path_lam3, path_lam4)
-    generator, (X_val, y_val) = train_val_split(data, bs, transform)
+    generator = pytorch_generator(
+        path_lam1,
+        path_lam2,
+        path_lam3,
+        path_lam4,
+        batch_size=bs,
+        transform=transform_factory(rand_imus),
+        num_workers=num_workers,
+    )
 
     _mae_metrices = dict(
         mae_deg=lambda q, qhat: jnp.rad2deg(
@@ -327,18 +282,6 @@ def main(
     )
 
     callbacks = make_exp_callbacks(ringnet) if exp_cbs else []
-
-    callbacks += [
-        ml.callbacks.EvalXyTrainingLoopCallback(
-            ringnet,
-            _mae_metrices,
-            X_val,
-            y_val,
-            None,
-            "val",
-            link_names=link_names,
-        )
-    ]
 
     optimizer = ml.make_optimizer(
         1e-3,
