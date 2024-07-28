@@ -7,11 +7,12 @@ import ring
 from ring import maths
 from ring import ml
 from ring import utils
-from ring.algorithms.generator.finalize_fns import GeneratorTrafoLambda
+import tree as tree_lib
 import tree_utils
 import wandb
 
 from exp_cbs import make_exp_callbacks
+from torch_dataloader import pytorch_generator
 
 dropout_rates = dict(
     seg3_1Seg=(0.0, 1.0),
@@ -77,36 +78,55 @@ def load_data(
             y.update(data_i[j][1])
         data_out[i] = (X, y)
 
+    print("Number of sequences: ", N)
+
     return data_out
 
 
 def train_val_split(
     data: list,
     bs: int,
-    transform_gen,
+    transform,
 ):
 
     n_batches_for_val = 1
     len_val = n_batches_for_val * bs
     train_data, val_data = data[:-len_val], data[-len_val:]
 
-    X_val, y_val = transform_gen(ring.RCMG.eager_gen_from_list(val_data, len_val))(
-        jax.random.PRNGKey(420)
-    )
+    X_val, y_val = pytorch_generator(val_data, len_val, transform=transform)(None)
 
-    generator = transform_gen(
-        ring.RCMG.eager_gen_from_list(
-            train_data,
-            bs,
-        )
+    generator = pytorch_generator(
+        train_data,
+        bs,
+        transform=transform,
+        use_futures=True,
+        future_max_workers=32 if ml.on_cluster() else 1,
     )
 
     return generator, (X_val, y_val)
 
 
+def batch_concat_acme(
+    tree,
+    num_batch_dims: int = 1,
+) -> np.ndarray:
+    """Flatten and concatenate nested array structure, keeping batch dims.
+    IGNORES the ordered of elements in an `OrderedDict`, see EngineeringLog @ 18.02.23
+    """
+
+    def _flatten(x: np.ndarray, num_batch_dims: int) -> np.ndarray:
+        if x.ndim < num_batch_dims:
+            return x
+        return np.reshape(x, list(x.shape[:num_batch_dims]) + [-1])
+
+    flatten_fn = lambda x: _flatten(x, num_batch_dims)
+    flat_leaves = tree_lib.map_structure(flatten_fn, tree)
+    return np.concatenate(tree_lib.flatten(flat_leaves), axis=-1)
+
+
 def _flatten(seq: list):
     seq = tree_utils.tree_batch(seq, backend=None)
-    seq = tree_utils.batch_concat_acme(seq, num_batch_dims=3).transpose((1, 2, 0, 3))
+    seq = batch_concat_acme(seq, num_batch_dims=3).transpose((1, 2, 0, 3))
     return seq
 
 
@@ -148,126 +168,92 @@ def _expand_then_flatten(X, y):
     return X, y
 
 
-def pmap(f):
-    pmap_f = jax.pmap(f)
-
-    def _f(*args):
-        B = tree_utils.tree_shape(args)
-        sizes = utils.distribute_batchsize(B)
-        args = utils.expand_batchsize(args, *sizes)
-        out = pmap_f(*args)
-        return utils.merge_batchsize(out, *sizes)
-
-    return _f
-
-
-@pmap
-def _qinv_root(y):
+def _qinv_root_(y: np.ndarray) -> np.ndarray:
     for i, p in enumerate(lam):
         if p == -1:
-            y = y.at[:, :, i].set(maths.quat_inv(y[:, :, i]))
-    return y
+            y[..., i, :] = qmt.qinv(y[..., i, :])
 
 
-@pmap
-def c_to_parent_TO_c_to_eps(y):
-    y = y.copy()
+def c_to_parent_TO_c_to_eps_(y: np.ndarray) -> np.ndarray:
     for i, p in enumerate(lam):
         if p == -1:
             continue
-        y = y.at[:, :, i].set(maths.quat_mul(y[:, :, p], y[:, :, i]))
-    return y
+        y[..., i, :] = qmt.qmult(y[..., p, :], y[..., i, :])
 
 
-@pmap
-def c_to_eps_TO_c_to_parent(y):
-    y_i_to_p = y.copy()
+def c_to_eps_TO_c_to_parent_(y: np.ndarray) -> np.ndarray:
+    y_eps = y.copy()
     for i, p in enumerate(lam):
         if p == -1:
             continue
-        y_i_to_p = y_i_to_p.at[:, :, i].set(
-            maths.quat_mul(maths.quat_inv(y[:, :, p]), y[:, :, i])
-        )
-    return y_i_to_p
+        y[..., i, :] = qmt.qmult(qmt.qinv(y_eps[..., p, :]), y_eps[..., i, :])
 
 
-def rand_quats(imu_available) -> np.ndarray:
-    "Returns array (B, 10, 4)"
-    B = imu_available.shape[0]
-    qrand = qmt.randomQuat((B, 10))
+def rand_quats(imu_available: np.ndarray) -> np.ndarray:
+    "Returns array (B, 10, 4) or (10, 4)"
+    qrand = qmt.randomQuat(imu_available.shape)
     qrand[~imu_available.astype(bool)] = np.array([1.0, 0, 0, 0])
     return qrand
 
 
-@pmap
-def _rotate(qrand, vec):
-    assert qrand.shape[1:] == (10, 4)
-    return jax.vmap(maths.rotate, (1, None), out_axes=1)(vec, qrand)
-
-
-def rotate_X(qrand, X):
-    X_0to3 = _rotate(qrand, X[..., :3])
-    X_3to6 = _rotate(qrand, X[..., 3:6])
-    X_6to9 = _rotate(qrand, X[..., 6:9])
-    return jnp.concatenate((X_0to3, X_3to6, X_6to9, X[..., 9:10]), axis=-1)
+def rotate_X_(qrand, X):
+    batched = X.ndim > 3
+    qrand = qrand[None, None] if batched else qrand[None]
+    X[..., :3] = qmt.rotate(qrand, X[..., :3])
+    X[..., 3:6] = qmt.rotate(qrand, X[..., 3:6])
+    X[..., 6:9] = qmt.rotate(qrand, X[..., 6:9])
+    return X
 
 
 def rotate_y(qrand, y):
 
-    y = _qinv_root(y)
-    y = c_to_parent_TO_c_to_eps(y)
-    y = jax.vmap(maths.quat_mul, (1, None), 1)(y, maths.quat_inv(qrand))
-    y = c_to_eps_TO_c_to_parent(y)
-    y = _qinv_root(y)
+    _qinv_root_(y)
+    c_to_parent_TO_c_to_eps_(y)
+    y = qmt.qmult(y, qmt.qinv(qrand[None]))
+    c_to_eps_TO_c_to_parent_(y)
+    _qinv_root_(y)
 
     for i, p in enumerate(lam):
         if p == -1:
-            y = y.at[:, :, i].set(
-                maths.quat_project(y[:, :, i], jnp.array([0, 0, 1.0]))[1]
+            y[..., i, :] = qmt.qmult(
+                y[..., i, :],
+                qmt.qinv(-qmt.quatProject(y[..., i, :], [0, 0, 1.0])["projQuat"]),
             )
 
     return y
 
 
-def output_transform_factory(link_names, batchsize: int, do_randomize_imus: bool):
+def _rename_links(d: dict[str, dict]):
+    for key in list(d.keys()):
+        if key in link_names:
+            d[str(link_names.index(key))] = d.pop(key)
 
-    def _rename_links(d: dict[str, dict]):
-        for key in list(d.keys()):
-            if key in link_names:
-                d[str(link_names.index(key))] = d.pop(key)
 
-    def output_transform(tree):
-        X, y = tree
+def transform(tree):
+    X, y = tree
+    draw = lambda p: np.array(np.random.binomial(1, p), dtype=float)
 
-        draw = lambda p: np.random.binomial(1, p, size=batchsize).astype(float)[
-            :, None, None
-        ]
+    factor_imus = []
+    for segments, (imu_rate, jointaxes_rate) in dropout_rates.items():
+        factor_imu = draw(1 - imu_rate)
+        factor_imus.append(factor_imu[None])
+        factor_ja = draw(1 - jointaxes_rate)
 
-        factor_imus = []
-        for segments, (imu_rate, jointaxes_rate) in dropout_rates.items():
-            factor_imu = draw(1 - imu_rate)
-            factor_imus.append(factor_imu[None, :, 0, 0])
-            factor_ja = draw(1 - jointaxes_rate)
+        X[segments]["acc"] *= factor_imu
+        X[segments]["gyr"] *= factor_imu
+        X[segments]["joint_axes"] *= factor_ja
 
-            X[segments]["acc"] *= factor_imu
-            X[segments]["gyr"] *= factor_imu
-            X[segments]["joint_axes"] *= factor_ja
+    _rename_links(X)
+    _rename_links(y)
+    factor_imus = np.concatenate(factor_imus).T
+    assert factor_imus.shape == (10,), f"{factor_imus.shape} != (10,)"
 
-        _rename_links(X)
-        _rename_links(y)
-        factor_imus = np.concatenate(factor_imus).T
-        assert factor_imus.shape == (
-            batchsize,
-            10,
-        ), f"{factor_imus.shape} != {(batchsize, 10)}"
-
-        X, y = _expand_then_flatten(X, y)
-        if do_randomize_imus:
-            qrand = rand_quats(factor_imus)
-            X, y = rotate_X(qrand, X), rotate_y(qrand, y)
-        return X, y
-
-    return output_transform
+    X, y = _expand_then_flatten(X, y)
+    if True:
+        qrand = rand_quats(factor_imus)
+        rotate_X_(qrand, X)
+        y = rotate_y(qrand, y)
+    return X, y
 
 
 def _make_ring(lam, params_warmstart: str | None, dry_run: bool):
@@ -298,7 +284,7 @@ def main(
     seed: int = 1,
     dry_run: bool = False,
     exp_cbs: bool = False,
-    rand_imus: bool = False,
+    # rand_imus: bool = False,
 ):
     """Train RING using data from step1.
 
@@ -332,13 +318,7 @@ def main(
     ringnet = _make_ring(lam, params_warmstart, dry_run)
 
     data = load_data(path_lam1, path_lam2, path_lam3, path_lam4)
-    generator, (X_val, y_val) = train_val_split(
-        data,
-        bs,
-        transform_gen=GeneratorTrafoLambda(
-            output_transform_factory(link_names, bs, rand_imus)
-        ),
-    )
+    generator, (X_val, y_val) = train_val_split(data, bs, transform)
 
     _mae_metrices = dict(
         mae_deg=lambda q, qhat: jnp.rad2deg(
