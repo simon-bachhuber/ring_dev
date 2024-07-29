@@ -124,9 +124,10 @@ def c_to_eps_TO_c_to_parent_(y: np.ndarray) -> np.ndarray:
         y[..., i, :] = qmt.qmult(qmt.qinv(y_eps[..., p, :]), y_eps[..., i, :])
 
 
-def rand_quats(imu_available: np.ndarray) -> np.ndarray:
+def rand_quats(imu_available: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     "Returns array (B, 10, 4) or (10, 4)"
-    qrand = qmt.randomQuat(imu_available.shape)
+    qrand = rng.standard_normal(size=imu_available.shape + (4,))
+    qrand = qrand / np.linalg.norm(qrand, axis=-1, keepdims=True)
     qrand[~imu_available.astype(bool)] = np.array([1.0, 0, 0, 0])
     return qrand
 
@@ -172,9 +173,9 @@ class Transform:
     def __init__(self, rand_imus: bool):
         self.rand_imus = rand_imus
 
-    def __call__(self, data: list):
+    def __call__(self, data: list, rng: np.random.Generator):
         X, y = make_10_body_system(data)
-        draw = lambda p: np.array(np.random.binomial(1, p), dtype=float)
+        draw = lambda p: np.array(rng.binomial(1, p), dtype=float)
 
         factor_imus = []
         for segments, (imu_rate, jointaxes_rate) in dropout_rates.items():
@@ -193,7 +194,7 @@ class Transform:
 
         X, y = _expand_then_flatten(X, y)
         if self.rand_imus:
-            qrand = rand_quats(factor_imus)
+            qrand = rand_quats(factor_imus, rng)
             rotate_X_(qrand, X)
             y = rotate_y(qrand, y)
         return X, y
@@ -234,6 +235,8 @@ def main(
     dry_run: bool = False,
     exp_cbs: bool = False,
     rand_imus: bool = False,
+    worker_count: int = 0,
+    lr: float = 1e-3,
 ):
     """Train RING using data from step1.
 
@@ -266,13 +269,14 @@ def main(
 
     ringnet = _make_ring(lam, params_warmstart, dry_run)
 
-    generator = dataloader.eager_generator(
+    generator = dataloader.make_generator(
         path_lam1,
         path_lam2,
         path_lam3,
         path_lam4,
         batch_size=bs,
         transform=Transform(rand_imus),
+        worker_count=worker_count,
     )
 
     _mae_metrices = dict(
@@ -284,7 +288,7 @@ def main(
     callbacks = make_exp_callbacks(ringnet) if exp_cbs else []
 
     optimizer = ml.make_optimizer(
-        1e-3,
+        lr,
         episodes,
         n_steps_per_episode=6,
         skip_large_update_max_normsq=100.0,

@@ -1,10 +1,9 @@
-from concurrent import futures
 import os
 from typing import Callable, Optional
 
+from matplotlib.pylab import Generator
 import numpy as np
-import ring
-from ring import utils
+import ring.utils as utils
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 import tqdm
@@ -41,10 +40,6 @@ class _Dataset(Dataset):
         return self[idx]
 
 
-def _collate_fn(data: list[T]) -> T:
-    return tree_utils.tree_batch(data)
-
-
 def pytorch_generator(
     *paths,
     batch_size: int,
@@ -55,7 +50,9 @@ def pytorch_generator(
     ds = _Dataset(*paths, transform=transform)
     _kwargs = dict(shuffle=True)
     _kwargs.update(kwargs)
-    dl = DataLoader(ds, batch_size=batch_size, collate_fn=_collate_fn, **_kwargs)
+    dl = DataLoader(
+        ds, batch_size=batch_size, collate_fn=tree_utils.tree_batch, **_kwargs
+    )
     dl_iter = iter(dl)
 
     def generator(_):
@@ -69,12 +66,50 @@ def pytorch_generator(
     return generator
 
 
+def make_generator(*paths, batch_size, transform, **kwargs):
+    try:
+        return pygrain_generator(
+            *paths, batch_size=batch_size, transform=transform, **kwargs
+        )
+    except ImportError:
+        return eager_generator(*paths, batch_size=batch_size, transform=transform)
+
+
 def eager_generator(
     *paths, batch_size: int, transform: Optional[Callable[[T], T]] = None
 ):
-    ds = _Dataset(*paths, transform=transform)
-    with futures.ProcessPoolExecutor() as exec:
-        data = list(exec.map(ds, range(len(ds))))
+    from ring import RCMG
 
-    # data = [ds[i] for i in tqdm.tqdm(range(len(ds)), total=len(ds))]
-    return ring.RCMG.eager_gen_from_list(data, batch_size)
+    def _transform(element):
+        return transform(element, np.random.default_rng())
+
+    ds = _Dataset(*paths, transform=_transform)
+    data = [ds[i] for i in tqdm.tqdm(range(len(ds)), total=len(ds))]
+    return RCMG.eager_gen_from_list(data, batch_size)
+
+
+def pygrain_generator(
+    *paths, batch_size: int, transform=None, worker_count: int = 0, seed: int = 1
+):
+
+    import grain.python as pygrain
+
+    class _Transform(pygrain.RandomMapTransform):
+        def random_map(self, element, rng: Generator):
+            return transform(element, rng)
+
+    ds = _Dataset(*paths, transform=None)
+    dl = pygrain.load(
+        ds,
+        batch_size=batch_size,
+        worker_count=worker_count,
+        shuffle=True,
+        seed=seed,
+        transformations=[_Transform()],
+    )
+    iter_dl = iter(dl)
+
+    def generator(_):
+        return next(iter_dl)
+
+    return generator
