@@ -1,8 +1,6 @@
 import fire
-import jax.numpy as jnp
 import numpy as np
 import ring
-from ring import maths
 from ring import ml
 import wandb
 
@@ -96,13 +94,9 @@ def main(
         path_lam4,
         batch_size=bs,
         transform=transform.Transform(rand_imus),
+        # num_workers=worker_count,
         worker_count=worker_count,
-    )
-
-    _mae_metrices = dict(
-        mae_deg=lambda q, qhat: jnp.rad2deg(
-            jnp.mean(maths.angle_error(q, qhat)[:, 2500:])
-        )
+        backend="grain",
     )
 
     callbacks = make_exp_callbacks(ringnet) if exp_cbs else []

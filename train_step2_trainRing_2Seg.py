@@ -237,6 +237,7 @@ def main(
         batch_size=bs,
         transform=Transform(rand_imus),
         worker_count=worker_count,
+        eager=True,
     )
 
     ringnet_exp = ml.base.GroundTruthHeading_FilterWrapper(OnlyQuatWrapper(ringnet))
