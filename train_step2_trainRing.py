@@ -1,3 +1,7 @@
+import os
+
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+
 import fire
 import numpy as np
 import ring
@@ -53,7 +57,8 @@ def main(
     dry_run: bool = False,
     exp_cbs: bool = False,
     rand_imus: bool = False,
-    worker_count: int = 0,
+    dl_worker_count: int = 0,
+    dl_backend: str = "eager",
     lr: float = 1e-3,
 ):
     """Train RING using data from step1.
@@ -87,6 +92,10 @@ def main(
 
     ringnet = _make_ring(lam, params_warmstart, dry_run)
 
+    kwargs = {}
+    if dl_backend != "eager":
+        keyword = "num_workers" if dl_backend == "torch" else "worker_count"
+        kwargs.update({keyword: dl_worker_count})
     generator = dataloader.make_generator(
         path_lam1,
         path_lam2,
@@ -94,9 +103,9 @@ def main(
         path_lam4,
         batch_size=bs,
         transform=transform.Transform(rand_imus),
-        # num_workers=worker_count,
-        worker_count=worker_count,
-        backend="grain",
+        seed=seed,
+        backend=dl_backend,
+        **kwargs,
     )
 
     callbacks = make_exp_callbacks(ringnet) if exp_cbs else []
