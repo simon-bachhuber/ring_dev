@@ -52,6 +52,7 @@ def main(
     path_trained_params: str | None = None,
     use_wandb: bool = False,
     wandb_project: str = "RING",
+    wandb_name: str = None,
     params_warmstart: str = None,
     seed: int = 1,
     dry_run: bool = False,
@@ -85,7 +86,7 @@ def main(
     np.random.seed(seed)
 
     if use_wandb:
-        wandb.init(project=wandb_project, config=locals())
+        wandb.init(project=wandb_project, config=locals(), name=wandb_name)
 
     if path_trained_params is None:
         path_trained_params = f"~/params/{ring.ml.unique_id()}.pickle"
