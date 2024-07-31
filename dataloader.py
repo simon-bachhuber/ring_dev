@@ -1,4 +1,5 @@
 import os
+import random
 from typing import Callable, Optional
 
 import jax
@@ -13,7 +14,13 @@ import tree_utils
 
 
 def make_generator(
-    *paths, batch_size, transform, shuffle=True, backend: str = "eager", **kwargs
+    *paths,
+    batch_size,
+    transform,
+    shuffle=True,
+    seed: int = 1,
+    backend: str = "eager",
+    **kwargs,
 ):
     if backend == "grain":
         _make_gen = pygrain_generator
@@ -25,7 +32,12 @@ def make_generator(
         raise NotImplementedError
 
     return _make_gen(
-        *paths, batch_size=batch_size, transform=transform, shuffle=shuffle, **kwargs
+        *paths,
+        batch_size=batch_size,
+        transform=transform,
+        shuffle=shuffle,
+        seed=seed,
+        **kwargs,
     )
 
 
@@ -75,8 +87,10 @@ def pytorch_generator(
     batch_size: int,
     transform: Optional[Callable[[T], T]] = None,
     shuffle=True,
+    seed: int = 1,
     **kwargs,
 ):
+    torch.manual_seed(seed)
 
     ds = _Dataset(*paths, transform=TransformTransform(transform))
     dl = DataLoader(
@@ -103,16 +117,24 @@ def pytorch_generator(
 
 
 def eager_generator(
-    *paths, batch_size: int, transform: Optional[Callable[[T], T]] = None, shuffle=True
+    *paths,
+    batch_size: int,
+    transform: Optional[Callable[[T], T]] = None,
+    shuffle=True,
+    seed=1,
 ):
     from ring import RCMG
+
+    random.seed(seed)
 
     ds = _Dataset(*paths, transform=TransformTransform(transform))
     data = [ds[i] for i in tqdm.tqdm(range(len(ds)), total=len(ds))]
     return RCMG.eager_gen_from_list(data, batch_size, shuffle=shuffle)
 
 
-def pygrain_generator(*paths, batch_size: int, transform=None, shuffle=True, **kwargs):
+def pygrain_generator(
+    *paths, batch_size: int, transform=None, shuffle=True, seed=1, **kwargs
+):
 
     import grain.python as pygrain
 
@@ -125,6 +147,7 @@ def pygrain_generator(*paths, batch_size: int, transform=None, shuffle=True, **k
         ds,
         batch_size=batch_size,
         shuffle=shuffle,
+        seed=seed,
         transformations=[_Transform()],
         **kwargs,
     )
