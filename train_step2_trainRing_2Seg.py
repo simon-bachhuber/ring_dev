@@ -1,3 +1,7 @@
+import os
+
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+
 import fire
 import jax
 import jax.numpy as jnp
@@ -193,12 +197,14 @@ def main(
     path_trained_params: str | None = None,
     use_wandb: bool = False,
     wandb_project: str = "RING",
+    wandb_name: str = None,
     params_warmstart: str = None,
     seed: int = 1,
     dry_run: bool = False,
     exp_cbs: bool = False,
     rand_imus: bool = False,
-    worker_count: int = 0,
+    dl_worker_count: int = 0,
+    dl_backend: str = "eager",
     lr: float = 1e-3,
 ):
     """Train RING using data from step1.
@@ -225,19 +231,24 @@ def main(
     np.random.seed(seed)
 
     if use_wandb:
-        wandb.init(project=wandb_project, config=locals())
+        wandb.init(project=wandb_project, config=locals(), name=wandb_name)
 
     if path_trained_params is None:
         path_trained_params = f"~/params/{ring.ml.unique_id()}.pickle"
 
     ringnet = _make_ring(lam, params_warmstart, dry_run)
 
+    kwargs = {}
+    if dl_backend != "eager":
+        keyword = "num_workers" if dl_backend == "torch" else "worker_count"
+        kwargs.update({keyword: dl_worker_count})
     generator = dataloader.make_generator(
         path_lam2,
         batch_size=bs,
         transform=Transform(rand_imus),
-        worker_count=worker_count,
-        eager=True,
+        seed=seed,
+        backend=dl_backend,
+        **kwargs,
     )
 
     ringnet_exp = ml.base.GroundTruthHeading_FilterWrapper(OnlyQuatWrapper(ringnet))
