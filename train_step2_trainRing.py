@@ -10,6 +10,7 @@ import wandb
 
 import dataloader
 from exp_cbs import make_exp_callbacks
+from ringnet import make_ring as make_ring_slstm
 import transform
 
 lam = [-1, -1, 1, -1, 3, 4, -1, 6, 7, 8]
@@ -29,13 +30,16 @@ link_names = [
 
 
 def _make_ring(lam, params_warmstart: str | None, dry_run: bool):
-    hidden_state_dim = 400 if not dry_run else 20
+    head_dim = 16 if not dry_run else 4
+    head_num = 8 if not dry_run else 2
     message_dim = 200 if not dry_run else 10
     ringnet = ml.RING(
         lam=lam,
-        hidden_state_dim=hidden_state_dim,
         message_dim=message_dim,
         params=params_warmstart,
+        forward_factory=make_ring_slstm,
+        head_dim=head_dim,
+        head_num=head_num,
     )
     ringnet = ml.base.ScaleX_FilterWrapper(ringnet)
     ringnet = ml.base.GroundTruthHeading_FilterWrapper(ringnet)

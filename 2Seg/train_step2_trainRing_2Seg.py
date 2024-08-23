@@ -3,6 +3,7 @@ import os
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
 import fire
+import haiku.experimental.flax as hkflax
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -15,7 +16,7 @@ import tree_utils
 import wandb
 
 import dataloader
-from exp_cbs import make_exp_callbacks
+from ringnet import make_ring
 
 lam = [-1, 0]
 link_names = [
