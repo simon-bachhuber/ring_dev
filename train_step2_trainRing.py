@@ -4,13 +4,13 @@ os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
 import fire
 import numpy as np
+import optax
 import ring
 from ring import ml
 import wandb
 
 import dataloader
 from exp_cbs import make_exp_callbacks
-from ringnet import make_ring as make_ring_slstm
 import transform
 
 lam = [-1, -1, 1, -1, 3, 4, -1, 6, 7, 8]
@@ -30,16 +30,13 @@ link_names = [
 
 
 def _make_ring(lam, params_warmstart: str | None, dry_run: bool):
-    head_dim = 16 if not dry_run else 4
-    head_num = 8 if not dry_run else 2
     message_dim = 200 if not dry_run else 10
+    hidden_state_dim = 400 if not dry_run else 20
     ringnet = ml.RING(
         lam=lam,
         message_dim=message_dim,
+        hidden_state_dim=hidden_state_dim,
         params=params_warmstart,
-        forward_factory=make_ring_slstm,
-        head_dim=head_dim,
-        head_num=head_num,
     )
     ringnet = ml.base.ScaleX_FilterWrapper(ringnet)
     ringnet = ml.base.GroundTruthHeading_FilterWrapper(ringnet)
@@ -115,12 +112,24 @@ def main(
 
     callbacks = make_exp_callbacks(ringnet) if exp_cbs else []
 
-    optimizer = ml.make_optimizer(
-        lr,
-        episodes,
-        n_steps_per_episode=6,
-        skip_large_update_max_normsq=100.0,
-    )
+    if params_warmstart is None:
+        optimizer = ml.make_optimizer(
+            lr,
+            episodes,
+            n_steps_per_episode=6,
+            skip_large_update_max_normsq=100.0,
+        )
+    else:
+        warmup = 1 / 3
+        optimizer = optax.lamb(
+            optax.warmup_cosine_decay_schedule(
+                1e-5,
+                lr,
+                6 * int(episodes * warmup),
+                6 * episodes,
+            ),
+            eps=1e-5,
+        )
 
     ml.train_fn(
         generator,
