@@ -3,8 +3,32 @@ from pathlib import Path
 from typing import Optional
 
 import fire
+import jax
 import ring
 from ring.utils import randomize_sys
+
+
+def setup_fn_factory(p: float):
+    def setup_fn(key, sys: ring.System):
+        children = sys.children(sys.find_body_to_world(name=True))
+        bodies = sys.findall_bodies_with_jointtype("rr_imp")
+        start = [i for i in bodies if i in children][0]
+
+        joint_axes = sys.links.joint_params["rr_imp"]["joint_axes"]
+        axis = joint_axes[start]
+
+        bodies.remove(start)
+        for i in bodies:
+            key, consume = jax.random.split(key)
+            duplicate = jax.random.bernoulli(consume, p=p)
+            joint_axes = jax.lax.cond(
+                duplicate, lambda i: joint_axes.at[i].set(axis), lambda i: joint_axes, i
+            )
+
+        sys.links.joint_params["rr_imp"]["joint_axes"] = joint_axes
+        return sys.replace(links=sys.links.replace(joint_params=sys.links.joint_params))
+
+    return setup_fn
 
 
 def main(
@@ -16,6 +40,7 @@ def main(
     anchors: Optional[list[str]] = None,
     imu_motion_artifacts: bool = False,
     sampling_rates: list[float] = [100],
+    p_duplicate_ja: float = 0.8,
 ):
     """Generate training data for RING and serialize to pickle file.
 
@@ -39,6 +64,8 @@ def main(
         sampling_rates (list[float]): sampling rates to use for generating data, in
             Hz (1 / second). Defaults to [100].
     """
+    ring.setup(rr_imp_joint_kwargs=dict(ang_max_deg=3))
+
     sys = ring.System.create(xml_path)
 
     if output_path is None:
@@ -74,6 +101,7 @@ def main(
         randomize_hz=True,
         randomize_hz_kwargs=dict(sampling_rates=sampling_rates),
         cor=True,
+        setup_fn=setup_fn_factory(p_duplicate_ja),
     ).to_pickle(output_path, size, seed, overwrite=False)
 
     print(f"Saved data at {str(output_path)}")
