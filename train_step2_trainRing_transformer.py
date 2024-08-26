@@ -33,12 +33,9 @@ def _transform(data: list, rng):
     return X, y
 
 
-def _make_net(dry_run: bool):
+def _make_net(dry_run: bool, **kwargs):
     net = make_transformer(
-        embed_dim=32 if dry_run else 1024,
-        ff_dim=32 if dry_run else 2048,
-        num_heads=16,
-        num_layers=4,
+        embed_dim=32 if dry_run else 512, ff_dim=32 if dry_run else 2048, **kwargs
     )
     return net
 
@@ -56,6 +53,7 @@ def main(
     dl_worker_count: int = 0,
     dl_backend: str = "eager",
     lr: float = 1e-3,
+    pos_encoding: bool = False,
 ):
 
     np.random.seed(seed)
@@ -66,7 +64,7 @@ def main(
     if path_trained_params is None:
         path_trained_params = f"~/params/{ring.ml.unique_id()}.pickle"
 
-    ringnet = _make_net(dry_run)
+    ringnet = _make_net(dry_run, pos_encoding=pos_encoding)
 
     kwargs = {}
     if dl_backend != "eager":
