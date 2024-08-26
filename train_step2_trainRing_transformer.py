@@ -20,8 +20,8 @@ def _transform(data: list, rng):
     X_dict, y_dict = jax.tree.map(lambda a: a[:6000], (X_dict, y_dict))
 
     X = np.zeros((6000, 2, 9))
-    X[:, 0, :3] = X_dict["seg4_3Seg"]["acc"]
-    X[:, 0, 3:6] = X_dict["seg4_3Seg"]["gyr"]
+    X[:, 0, :3] = X_dict["seg3_3Seg"]["acc"]
+    X[:, 0, 3:6] = X_dict["seg3_3Seg"]["gyr"]
     X[:, 0, 6:9] = X_dict["seg4_3Seg"]["joint_axes"]
     X[:, 1, :3] = X_dict["seg5_3Seg"]["acc"]
     X[:, 1, 3:6] = X_dict["seg5_3Seg"]["gyr"]
