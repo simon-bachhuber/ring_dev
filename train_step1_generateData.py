@@ -1,5 +1,4 @@
 from dataclasses import replace
-from pathlib import Path
 from typing import Optional
 
 import fire
@@ -34,9 +33,9 @@ def setup_fn_factory(p: float):
 def main(
     xml_path: str,
     size: int,
+    output_path: str,
     configs: list[str] = ["standard"],
     seed: int = 1,
-    output_path: Optional[str] = None,
     anchors: Optional[list[str]] = None,
     imu_motion_artifacts: bool = False,
     sampling_rates: list[float] = [100],
@@ -68,17 +67,6 @@ def main(
 
     sys = ring.System.create(xml_path)
 
-    if output_path is None:
-        folder = Path(__file__).parent.joinpath("ring_data")
-        folder.mkdir(exist_ok=True)
-        output_path = folder.joinpath(
-            f"data_{sys.model_name}_{'-'.join(configs)}_Hz"
-            + f"{'-'.join([str(int(s)) for s in sampling_rates])}_size{size}_seed{seed}"
-            + ".pickle"
-        )
-    else:
-        output_path = Path(output_path).with_suffix(".pickle")
-
     ring.RCMG(
         randomize_sys.randomize_anchors(sys, anchors) if anchors else sys,
         [replace(ring.MotionConfig.from_register(c), T=150.0) for c in configs],
@@ -102,9 +90,7 @@ def main(
         randomize_hz_kwargs=dict(sampling_rates=sampling_rates),
         cor=True,
         setup_fn=setup_fn_factory(p_duplicate_ja),
-    ).to_pickle(output_path, size, seed, overwrite=False)
-
-    print(f"Saved data at {str(output_path)}")
+    ).to_folder(output_path, size, seed, overwrite=False)
 
 
 if __name__ == "__main__":
