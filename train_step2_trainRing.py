@@ -123,12 +123,12 @@ def main(
         warmup = 1 / 3
         optimizer = optax.lamb(
             optax.warmup_cosine_decay_schedule(
-                1e-5,
+                1e-7,
                 lr,
                 6 * int(episodes * warmup),
                 6 * episodes,
             ),
-            eps=1e-5,
+            # eps=1e-5,
         )
 
     ml.train_fn(
