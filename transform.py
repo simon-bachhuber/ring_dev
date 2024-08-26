@@ -3,7 +3,7 @@ import qmt
 import tree as tree_lib
 import tree_utils
 
-dropout_rates = dict(
+default_dropout_rates = dict(
     seg3_1Seg=(0.0, 1.0),
     seg3_2Seg=(0.0, 1.0),
     seg4_2Seg=(0.0, 0.5),
@@ -173,15 +173,16 @@ def make_10_body_system(data: list) -> tuple:
 
 
 class Transform:
-    def __init__(self, rand_imus: bool):
+    def __init__(self, rand_imus: bool, dropout_rates=default_dropout_rates):
         self.rand_imus = rand_imus
+        self.dropout_rates = dropout_rates
 
     def __call__(self, data: list, rng: np.random.Generator):
         X, y = make_10_body_system(data)
         draw = lambda p: np.array(rng.binomial(1, p), dtype=float)
 
         factor_imus = []
-        for segments, (imu_rate, jointaxes_rate) in dropout_rates.items():
+        for segments, (imu_rate, jointaxes_rate) in self.dropout_rates.items():
             factor_imu = draw(1 - imu_rate)
             factor_imus.append(factor_imu[None])
             factor_ja = draw(1 - jointaxes_rate)

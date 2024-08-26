@@ -27,6 +27,19 @@ link_names = [
     "seg4_4Seg",
     "seg5_4Seg",
 ]
+dropout_rates = dict(
+    seg3_1Seg=(0.0, 1.0),
+    seg3_2Seg=(0.0, 1.0),
+    seg4_2Seg=(0.0, 0.5),
+    seg3_3Seg=(0.0, 1.0),
+    # this used to be 2/3 and not 4/5
+    seg4_3Seg=(4 / 5, 0.0),
+    seg5_3Seg=(0.0, 0.0),
+    seg2_4Seg=(0.0, 1.0),
+    seg3_4Seg=(3 / 4, 0.0),
+    seg4_4Seg=(3 / 4, 0.0),
+    seg5_4Seg=(0.0, 0.0),
+)
 
 
 def _make_ring(lam, params_warmstart: str | None, dry_run: bool):
@@ -104,7 +117,7 @@ def main(
         path_lam3,
         path_lam4,
         batch_size=bs,
-        transform=transform.Transform(rand_imus),
+        transform=transform.Transform(rand_imus, dropout_rates),
         seed=seed,
         backend=dl_backend,
         **kwargs,
