@@ -15,7 +15,6 @@ def positional_encoding(seq_len, embed_dim):
     sines = jnp.sin(angle_rads[:, 0::2])
     cosines = jnp.cos(angle_rads[:, 1::2])
     pos_encoding = jnp.concatenate([sines, cosines], axis=-1)
-    print(pos_encoding.shape)
     return pos_encoding
 
 
