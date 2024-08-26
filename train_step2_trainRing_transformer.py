@@ -3,6 +3,7 @@ import os
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
 import fire
+import jax
 import numpy as np
 import ring
 from ring import ml
@@ -15,6 +16,8 @@ from transformer import make_transformer
 def _transform(data: list, rng):
     # [dict, dict] -> dict, dict
     X_dict, y_dict = data[0]
+    X_dict.pop("dt", None)
+    X_dict, y_dict = jax.tree.map(lambda a: a[:6000], (X_dict, y_dict))
 
     X = np.zeros((6000, 2, 9))
     X[:, 0, :3] = X_dict["seg4_3Seg"]["acc"]
