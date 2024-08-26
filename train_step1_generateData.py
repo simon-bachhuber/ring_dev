@@ -64,7 +64,7 @@ def main(
         sampling_rates (list[float]): sampling rates to use for generating data, in
             Hz (1 / second). Defaults to [100].
     """
-    ring.setup(rr_imp_joint_kwargs=dict(ang_max_deg=3))
+    ring.setup(rr_imp_joint_kwargs=dict(ang_max_deg=0.0))
 
     sys = ring.System.create(xml_path)
 
