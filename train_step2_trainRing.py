@@ -75,6 +75,7 @@ def main(
     dl_worker_count: int = 0,
     dl_backend: str = "eager",
     lr: float = 1e-3,
+    tbp: int = 1000,
 ):
     """Train RING using data from step1.
 
@@ -125,11 +126,12 @@ def main(
 
     callbacks = make_exp_callbacks(ringnet) if exp_cbs else []
 
+    n_steps_per_episode = int(6000 / tbp)
     if params_warmstart is None:
         optimizer = ml.make_optimizer(
             lr,
             episodes,
-            n_steps_per_episode=6,
+            n_steps_per_episode=n_steps_per_episode,
             skip_large_update_max_normsq=100.0,
         )
     else:
@@ -138,10 +140,11 @@ def main(
             optax.warmup_cosine_decay_schedule(
                 1e-7,
                 lr,
-                6 * int(episodes * warmup),
-                6 * episodes,
+                n_steps_per_episode * int(episodes * warmup),
+                n_steps_per_episode * episodes,
             ),
-            # eps=1e-5,
+            b2=0.98,
+            eps=1e-9,
         )
 
     ml.train_fn(
@@ -157,6 +160,7 @@ def main(
         callback_save_params_track_metrices=[["exp_val_mae_deg"]] if exp_cbs else None,
         seed_network=seed,
         link_names=link_names,
+        tbp=tbp,
     )
 
     print(f"Trained parameters saved to {path_trained_params}")
