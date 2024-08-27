@@ -82,7 +82,7 @@ def main(
     optimizer = ml.make_optimizer(
         lr,
         episodes,
-        n_steps_per_episode=1,
+        n_steps_per_episode=2,
         skip_large_update_max_normsq=100.0,
         adap_clip=None,
         glob_clip=1.0,
@@ -102,7 +102,7 @@ def main(
             "seg4_3Seg",
             "seg5_3Seg",
         ],
-        tbp=6000,
+        tbp=3000,
     )
 
     print(f"Trained parameters saved to {path_trained_params}")
