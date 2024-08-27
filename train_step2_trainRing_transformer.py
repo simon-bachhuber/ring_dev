@@ -35,7 +35,7 @@ def _transform(data: list, rng):
 
 def _make_net(dry_run: bool, **kwargs):
     net = make_transformer(
-        embed_dim=32 if dry_run else 512, ff_dim=32 if dry_run else 2048, **kwargs
+        embed_dim=32 if dry_run else 512, ff_dim=32 if dry_run else 1024, **kwargs
     )
     return net
 
