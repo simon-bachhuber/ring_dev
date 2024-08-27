@@ -3,14 +3,14 @@ import random
 from typing import Callable, Optional
 
 import jax
-from matplotlib.pylab import Generator
 import numpy as np
-import ring.utils as utils
+from ring.utils import parse_path
+from ring.utils import pickle_load
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 import tqdm
-import tree_utils
+from tree_utils import PyTree
 
 
 def make_generator(
@@ -41,7 +41,7 @@ def make_generator(
     )
 
 
-T = tree_utils.PyTree[np.ndarray]
+T = PyTree[np.ndarray]
 
 
 class _Dataset(Dataset):
@@ -59,14 +59,14 @@ class _Dataset(Dataset):
         return self.N
 
     def __getitem__(self, idx: int):
-        element = [utils.pickle_load(self.files[p][idx]) for p in range(self.P)]
+        element = [pickle_load(self.files[p][idx]) for p in range(self.P)]
         if self.transform is not None:
             element = self.transform(element)
         return element
 
     @staticmethod
     def listdir(path: str) -> list:
-        return [utils.parse_path(path, file) for file in os.listdir(path)]
+        return [parse_path(path, file) for file in os.listdir(path)]
 
     def __call__(self, idx: int):
         return self[idx]
@@ -102,7 +102,7 @@ def pytorch_generator(
     )
     dl_iter = iter(dl)
 
-    def to_numpy(tree: tree_utils.PyTree[torch.Tensor]):
+    def to_numpy(tree: PyTree[torch.Tensor]):
         return jax.tree_map(lambda tensor: tensor.numpy(), tree)
 
     def generator(_):
@@ -136,10 +136,10 @@ def pygrain_generator(
     *paths, batch_size: int, transform=None, shuffle=True, seed=1, **kwargs
 ):
 
-    import grain.python as pygrain
+    import grain.python as pygrain  # type: ignore
 
     class _Transform(pygrain.RandomMapTransform):
-        def random_map(self, element, rng: Generator):
+        def random_map(self, element, rng: np.random.Generator):
             return transform(element, rng)
 
     ds = _Dataset(*paths, transform=None)

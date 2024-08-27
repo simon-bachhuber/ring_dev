@@ -5,6 +5,7 @@ os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 import fire
 import jax
 import numpy as np
+import optax
 import ring
 from ring import ml
 import wandb
@@ -53,7 +54,8 @@ def main(
     dl_worker_count: int = 0,
     dl_backend: str = "eager",
     lr: float = 1e-3,
-    pos_encoding: bool = False,
+    pos_encoding: bool = True,
+    num_layers: int = 2,
 ):
 
     np.random.seed(seed)
@@ -64,7 +66,7 @@ def main(
     if path_trained_params is None:
         path_trained_params = f"~/params/{ring.ml.unique_id()}.pickle"
 
-    ringnet = _make_net(dry_run, pos_encoding=pos_encoding)
+    ringnet = _make_net(dry_run, num_layers=num_layers, pos_encoding=pos_encoding)
 
     kwargs = {}
     if dl_backend != "eager":
@@ -79,13 +81,10 @@ def main(
         **kwargs,
     )
 
-    optimizer = ml.make_optimizer(
-        lr,
-        episodes,
-        n_steps_per_episode=2,
-        skip_large_update_max_normsq=100.0,
-        adap_clip=None,
-        glob_clip=1.0,
+    optimizer = optax.adam(
+        optax.warmup_cosine_decay_schedule(
+            1e-5, 3e-3, int(2 * episodes * 0.2), 2 * episodes
+        )
     )
 
     ml.train_fn(

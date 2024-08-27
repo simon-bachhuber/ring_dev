@@ -63,11 +63,8 @@ class Transformer(hk.Module):
             w_init=hk.initializers.VarianceScaling(1.0, "fan_avg", "uniform"),
         )(x, x, x)
 
-        # Ensure attention output matches the input shape
-        attn_proj = hk.Linear(self.embed_dim)(attn)
-
         # Residual connection and layer normalization
-        x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(attn_proj + x)
+        x = hk.LayerNorm(axis=-1, create_scale=True, create_offset=True)(attn + x)
 
         # Feed-forward network
         ff = hk.Linear(self.ff_dim)(x)
