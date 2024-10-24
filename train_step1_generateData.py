@@ -11,6 +11,9 @@ def setup_fn_factory(p: float):
     def setup_fn(key, sys: ring.System):
         children = sys.children(sys.find_body_to_world(name=True))
         bodies = sys.findall_bodies_with_jointtype("rr_imp")
+        if len(bodies) == 0:
+            return sys
+
         start = [i for i in bodies if i in children][0]
 
         joint_axes = sys.links.joint_params["rr_imp"]["joint_axes"]
@@ -40,6 +43,7 @@ def main(
     imu_motion_artifacts: bool = False,
     sampling_rates: list[float] = [100],
     p_duplicate_ja: float = 0.8,
+    add_X_jointaxes: bool = True,
 ):
     """Generate training data for RING and serialize to pickle file.
 
@@ -71,7 +75,7 @@ def main(
         randomize_sys.randomize_anchors(sys, anchors) if anchors else sys,
         [replace(ring.MotionConfig.from_register(c), T=150.0) for c in configs],
         add_X_imus=True,
-        add_X_jointaxes=True,
+        add_X_jointaxes=add_X_jointaxes,
         add_X_jointaxes_kwargs=dict(randomly_flip=True),
         add_y_relpose=True,
         add_y_rootincl=True,
