@@ -88,6 +88,7 @@ def main(
         act_fn_rnn=lambda X: X,
         params=params,
         celltype=celltype,
+        scale_X=False,
     )
 
     net = Wrapper(net)
