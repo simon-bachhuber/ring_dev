@@ -1,8 +1,3 @@
-import os
-
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-
-
 import fire
 import numpy as np
 import ring
@@ -61,6 +56,7 @@ def main(
     num_workers: int = 1,
     warmstart: str = None,
     lstm: bool = False,
+    rnno: bool = False,
 ):
     np.random.seed(seed)
 
@@ -78,18 +74,28 @@ def main(
     params = _params(hex(warmstart)) if warmstart else None
     celltype = "lstm" if lstm else "gru"
 
-    net = ring.ml.RNNO(
-        8,
-        return_quats=True,
-        eval=False,
-        v1=True,
-        rnn_layers=[rnn_w] * rnn_d,
-        linear_layers=[lin_w] * lin_d,
-        act_fn_rnn=lambda X: X,
-        params=params,
-        celltype=celltype,
-        scale_X=False,
-    )
+    if rnno:
+        net = ring.ml.RNNO(
+            8,
+            return_quats=True,
+            eval=False,
+            v1=True,
+            rnn_layers=[rnn_w] * rnn_d,
+            linear_layers=[lin_w] * lin_d,
+            act_fn_rnn=lambda X: X,
+            params=params,
+            celltype=celltype,
+            scale_X=False,
+        )
+    else:
+        net = ring.ml.RING(
+            lam=(-1, 0),
+            hidden_state_dim=rnn_w,
+            message_dim=lin_w,
+            celltype=celltype,
+            stack_rnn_cells=rnn_d,
+            send_message_n_layers=lin_d,
+        )
 
     net = Wrapper(net)
 

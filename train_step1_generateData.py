@@ -44,6 +44,7 @@ def main(
     sampling_rates: list[float] = [100],
     p_duplicate_ja: float = 0.8,
     add_X_jointaxes: bool = True,
+    T: float = 150.0,
 ):
     """Generate training data for RING and serialize to pickle file.
 
@@ -73,7 +74,7 @@ def main(
 
     ring.RCMG(
         randomize_sys.randomize_anchors(sys, anchors) if anchors else sys,
-        [replace(ring.MotionConfig.from_register(c), T=150.0) for c in configs],
+        [replace(ring.MotionConfig.from_register(c), T=T) for c in configs],
         add_X_imus=True,
         add_X_jointaxes=add_X_jointaxes,
         add_X_jointaxes_kwargs=dict(randomly_flip=True),
