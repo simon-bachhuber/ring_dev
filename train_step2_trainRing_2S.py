@@ -1,7 +1,9 @@
 import fire
 import numpy as np
 import ring
+from ring.utils.dataloader import _Dataset
 from ring.utils.dataloader import make_generator
+from ring.utils.dataloader import TransformTransform
 import wandb
 
 
@@ -71,6 +73,9 @@ def main(
         backend="torch",
         num_workers=num_workers,
     )
+    T = _Dataset(data_path, transform=TransformTransform(TransformFactory()))[0][
+        0
+    ].shape[0]
     params = _params(hex(warmstart)) if warmstart else None
     celltype = "lstm" if lstm else "gru"
 
@@ -103,7 +108,13 @@ def main(
         gen,
         episodes,
         net,
-        ring.ml.make_optimizer(lr, episodes, adap_clip=None, glob_clip=1.0),
+        ring.ml.make_optimizer(
+            lr,
+            episodes,
+            adap_clip=None,
+            glob_clip=1.0,
+            n_steps_per_episode=int(T / 1000),
+        ),
         callback_kill_after_seconds=23.5 * 3600,
         callback_kill_if_nan=True,
         callback_kill_if_grads_larger=1e32,
