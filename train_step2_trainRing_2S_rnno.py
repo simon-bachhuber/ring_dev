@@ -10,7 +10,7 @@ import wandb
 class Transform:
 
     def __init__(self, dof: int | None):
-        assert dof in [1, 2, 3]
+        assert dof in [1, 2, 3, None]
         self.dof = dof
 
     def __call__(self, ele: list):
