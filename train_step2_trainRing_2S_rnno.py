@@ -9,6 +9,10 @@ import wandb
 
 class Transform:
 
+    def __init__(self, dof: int | None):
+        assert dof in [1, 2, 3]
+        self.dof = dof
+
     def __call__(self, ele: list):
         X_d, y_d = ele
 
@@ -24,7 +28,7 @@ class Transform:
         qrel = qmt.qmult(q1, qmt.qmult(qrel, qmt.qinv(q2)))
 
         T = a1.shape[0]
-        F = 13
+        F = 13 if self.dof is None else 16
 
         X = np.zeros((T, F))
         X[:, 0:3] = a1
@@ -32,6 +36,8 @@ class Transform:
         X[:, 6:9] = g1
         X[:, 9:12] = g2
         X[:, 12] = X_d["dt"] * 10
+        if self.dof is not None:
+            X[:, 12 + self.dof] = 1.0
 
         return X[:, None], qrel[:, None]
 
@@ -57,6 +63,7 @@ def main(
     num_workers: int = 1,
     warmstart: str = None,
     lstm: bool = False,
+    dof: bool = False,
 ):
     np.random.seed(seed)
 
@@ -67,8 +74,10 @@ def main(
     gen = dataloader_torch.dataset_to_generator(
         ConcatDataset(
             [
-                dataloader_torch.FolderOfPickleFilesDataset(p, Transform())
-                for p in paths.split(",")
+                dataloader_torch.FolderOfPickleFilesDataset(
+                    p, Transform(i + 1 if dof else None)
+                )
+                for i, p in paths.split(",")
             ]
         ),
         batch_size=bs,
