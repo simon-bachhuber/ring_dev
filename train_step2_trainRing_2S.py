@@ -83,6 +83,7 @@ def main(
     T = _Dataset(data_path, transform=TransformTransform(TransformFactory(not rnno)))[
         0
     ][0].shape[0]
+    print("T: ", T)
     params = _params(hex(warmstart)) if warmstart else None
     celltype = "lstm" if lstm else "gru"
 

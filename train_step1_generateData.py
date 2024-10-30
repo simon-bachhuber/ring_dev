@@ -43,7 +43,7 @@ def main(
     imu_motion_artifacts: bool = False,
     sampling_rates: list[float] = [100],
     p_duplicate_ja: float = 0.8,
-    add_X_jointaxes: bool = True,
+    add_X_jointaxes: bool = False,
     T: float = 150.0,
 ):
     """Generate training data for RING and serialize to pickle file.
