@@ -77,7 +77,7 @@ def main(
                 dataloader_torch.FolderOfPickleFilesDataset(
                     p, Transform(i + 1 if dof else None)
                 )
-                for i, p in paths.split(",")
+                for i, p in enumerate(paths.split(","))
             ]
         ),
         batch_size=bs,
