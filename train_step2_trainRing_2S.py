@@ -9,24 +9,31 @@ import wandb
 
 class TransformFactory:
 
+    def __init__(self, use_ring: bool):
+        self.use_ring = use_ring
+
     def __call__(self, ele: list, rng):
         X_d, y = ele[0]
         if isinstance(X_d, tuple):
             X_d, y = X_d
 
         seg1, seg2 = X_d["seg1"], X_d["seg2"]
-        a1, a2 = seg1["acc"], seg2["acc"]
-        g1, g2 = seg1["gyr"], seg2["gyr"]
+        a1, a2 = seg1["acc"] / 9.81, seg2["acc"] / 9.81
+        g1, g2 = seg1["gyr"] / 3.14, seg2["gyr"] / 3.14
 
         T = a1.shape[0]
-        F = 6
+        F = 12 if self.use_ring else 6
 
         X = np.zeros((T, 2, F))
 
-        X[:, 0, :3] = a1 / 9.81
-        X[:, 0, 3:6] = g1 / 3.14
-        X[:, 1, :3] = a2 / 9.81
-        X[:, 1, 3:6] = g2 / 3.14
+        X[:, 0, :3] = a1
+        X[:, 0, 3:6] = g1
+        X[:, 1, :3] = a2
+        X[:, 1, 3:6] = g2
+
+        if self.use_ring:
+            X[:, 1, 6:9] = a1
+            X[:, 1, 9:12] = g1
 
         return X, y["seg2"][:, None]
 
@@ -69,13 +76,13 @@ def main(
     gen = make_generator(
         data_path,
         batch_size=bs,
-        transform=TransformFactory(),
+        transform=TransformFactory(not rnno),
         backend="torch",
         num_workers=num_workers,
     )
-    T = _Dataset(data_path, transform=TransformTransform(TransformFactory()))[0][
+    T = _Dataset(data_path, transform=TransformTransform(TransformFactory(not rnno)))[
         0
-    ].shape[0]
+    ][0].shape[0]
     params = _params(hex(warmstart)) if warmstart else None
     celltype = "lstm" if lstm else "gru"
 
@@ -100,6 +107,7 @@ def main(
             celltype=celltype,
             stack_rnn_cells=rnn_d,
             send_message_n_layers=lin_d,
+            layernorm_trainable=False,
         )
 
     net = Wrapper(net)
