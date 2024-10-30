@@ -1,5 +1,6 @@
 import fire
 import numpy as np
+import qmt
 import ring
 from ring.utils import dataloader_torch
 from torch.utils.data import ConcatDataset
@@ -15,6 +16,13 @@ class Transform:
         a1, a2 = seg1["acc"] / 9.81, seg2["acc"] / 9.81
         g1, g2 = seg1["gyr"] / 3.14, seg2["gyr"] / 3.14
 
+        q1 = qmt.randomQuat()
+        q2 = qmt.randomQuat()
+        a1, g1 = qmt.rotate(q1, a1), qmt.rotate(q1, g1)
+        a2, g2 = qmt.rotate(q2, a2), qmt.rotate(q2, g2)
+        qrel = y_d["seg2"]
+        qrel = qmt.qmult(q1, qmt.qmult(qrel, qmt.qinv(q2)))
+
         T = a1.shape[0]
         F = 13
 
@@ -25,7 +33,7 @@ class Transform:
         X[:, 9:12] = g2
         X[:, 12] = X_d["dt"] * 10
 
-        return X[:, None], y_d["seg2"][:, None]
+        return X[:, None], qrel[:, None]
 
 
 def _params(unique_id: str = ring.ml.unique_id()) -> str:
