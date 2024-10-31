@@ -9,9 +9,10 @@ import wandb
 
 class Transform:
 
-    def __init__(self, dof: int | None):
+    def __init__(self, dof: int | None, rand_ori: bool):
         assert dof in [1, 2, 3, None]
         self.dof = dof
+        self.rand_ori = rand_ori
 
     def __call__(self, ele: list):
         X_d, y_d = ele
@@ -20,8 +21,8 @@ class Transform:
         a1, a2 = seg1["acc"] / 9.81, seg2["acc"] / 9.81
         g1, g2 = seg1["gyr"] / 3.14, seg2["gyr"] / 3.14
 
-        q1 = qmt.randomQuat()
-        q2 = qmt.randomQuat()
+        q1 = qmt.randomQuat() if self.rand_ori else np.array([1.0, 0, 0, 0])
+        q2 = qmt.randomQuat() if self.rand_ori else np.array([1.0, 0, 0, 0])
         a1, g1 = qmt.rotate(q1, a1), qmt.rotate(q1, g1)
         a2, g2 = qmt.rotate(q2, a2), qmt.rotate(q2, g2)
         qrel = y_d["seg2"]
@@ -64,6 +65,7 @@ def main(
     warmstart: str = None,
     lstm: bool = False,
     dof: bool = False,
+    rand_ori: bool = False,
 ):
     np.random.seed(seed)
 
@@ -75,7 +77,7 @@ def main(
         ConcatDataset(
             [
                 dataloader_torch.FolderOfPickleFilesDataset(
-                    p, Transform(i + 1 if dof else None)
+                    p, Transform(i + 1 if dof else None, rand_ori)
                 )
                 for i, p in enumerate(paths.split(","))
             ]
