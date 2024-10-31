@@ -1,4 +1,5 @@
 import fire
+import jax.numpy as jnp
 import numpy as np
 import qmt
 import ring
@@ -101,7 +102,29 @@ def main(
         params=params,
         celltype=celltype,
         scale_X=False,
-    )
+    ).unwrapped  # get ride of GroundTruthWrapper
+
+    callbacks = []
+    for i, p in enumerate(paths.split(",")):
+        path = p + "_val"
+        ds_val = dataloader_torch.FolderOfPickleFilesDataset(
+            path, Transform(i + 1 if dof else None, rand_ori)
+        )
+        X_val, y_val = dataloader_torch.dataset_to_generator(ds_val, len(ds_val))(None)
+        callbacks.append(
+            ring.ml.callbacks.EvalXyTrainingLoopCallback(
+                net,
+                dict(
+                    mae_deg=lambda q, qhat: jnp.rad2deg(
+                        jnp.mean(ring.maths.angle_error(q, qhat))
+                    )
+                ),
+                X_val,
+                y_val,
+                None,
+                path.split("/")[-1] + "_",
+            )
+        )
 
     ring.ml.train_fn(
         gen,
@@ -116,6 +139,7 @@ def main(
         callback_kill_if_grads_larger=1e32,
         seed_network=seed,
         callback_save_params=_params(),
+        callbacks=callbacks,
     )
 
 
