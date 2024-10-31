@@ -15,6 +15,7 @@ def main(
     anchors: Optional[list[str]] = ["seg1", "seg2"],
     sampling_rates: list[float] = [40, 60, 80, 100, 120, 140, 160, 180, 200],
     T: float = 150.0,
+    motion_arti: bool = False,
 ):
     sys = ring.System.create(xml_path)
 
@@ -24,7 +25,7 @@ def main(
         add_X_imus=True,
         add_y_relpose=True,
         dynamic_simulation=True,
-        imu_motion_artifacts=True,
+        imu_motion_artifacts=motion_arti,
         imu_motion_artifacts_kwargs=dict(
             prob_rigid=0.25,
             pos_min_max=0.05,
