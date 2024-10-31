@@ -108,8 +108,6 @@ def main(
         ring.ml.make_optimizer(
             lr,
             episodes,
-            adap_clip=None,
-            glob_clip=1.0,
         ),
         callback_kill_after_seconds=23.5 * 3600,
         callback_kill_if_nan=True,
