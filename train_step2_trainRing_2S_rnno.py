@@ -1,6 +1,7 @@
 import fire
 import jax.numpy as jnp
 import numpy as np
+import optax
 import qmt
 import ring
 from ring.utils import dataloader_torch
@@ -67,6 +68,8 @@ def main(
     lstm: bool = False,
     dof: bool = False,
     rand_ori: bool = False,
+    sgd: bool = False,
+    clip: bool = False,
 ):
     np.random.seed(seed)
 
@@ -126,14 +129,18 @@ def main(
             )
         )
 
+    opt = optax.chain(
+        [
+            optax.clip_by_global_norm(0.7) if clip else optax.identity(),
+            optax.sgd(lr, momentum=0.9) if sgd else optax.adam(lr, eps=1e-6),
+        ]
+    )
+
     ring.ml.train_fn(
         gen,
         episodes,
         net,
-        ring.ml.make_optimizer(
-            lr,
-            episodes,
-        ),
+        opt,
         callback_kill_after_seconds=23.5 * 3600,
         callback_kill_if_nan=True,
         callback_kill_if_grads_larger=1e32,
