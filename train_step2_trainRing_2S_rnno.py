@@ -1,7 +1,6 @@
 import fire
 import jax.numpy as jnp
 import numpy as np
-import optax
 import qmt
 import ring
 from ring.utils import dataloader_torch
@@ -68,10 +67,7 @@ def main(
     lstm: bool = False,
     dof: bool = False,
     rand_ori: bool = False,
-    sgd: bool = False,
-    clip: bool = False,
     tbp: int = 1000,
-    schedule: bool = False,
 ):
     np.random.seed(seed)
 
@@ -131,11 +127,8 @@ def main(
             )
         )
 
-    if schedule:
-        lr = optax.cosine_decay_schedule(lr, int(6000 / tbp) * episodes)
-    opt = optax.chain(
-        optax.clip_by_global_norm(0.7) if clip else optax.identity(),
-        optax.sgd(lr, momentum=0.9) if sgd else optax.adam(lr, eps=1e-6),
+    opt = ring.ml.make_optimizer(
+        lr, episodes, int(6_000 / tbp), adap_clip=0.5, glob_clip=0.5
     )
 
     ring.ml.train_fn(
