@@ -70,6 +70,7 @@ def main(
     rand_ori: bool = False,
     sgd: bool = False,
     clip: bool = False,
+    tbp: int = 1000,
 ):
     np.random.seed(seed)
 
@@ -129,6 +130,7 @@ def main(
             )
         )
 
+    lr = optax.cosine_decay_schedule(lr, int(6000 / tbp) * episodes)
     opt = optax.chain(
         [
             optax.clip_by_global_norm(0.7) if clip else optax.identity(),
@@ -147,6 +149,7 @@ def main(
         seed_network=seed,
         callback_save_params=_params(),
         callbacks=callbacks,
+        tbp=tbp,
     )
 
 
