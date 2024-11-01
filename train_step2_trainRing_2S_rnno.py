@@ -71,6 +71,7 @@ def main(
     sgd: bool = False,
     clip: bool = False,
     tbp: int = 1000,
+    schedule: bool = False,
 ):
     np.random.seed(seed)
 
@@ -130,12 +131,11 @@ def main(
             )
         )
 
-    lr = optax.cosine_decay_schedule(lr, int(6000 / tbp) * episodes)
+    if schedule:
+        lr = optax.cosine_decay_schedule(lr, int(6000 / tbp) * episodes)
     opt = optax.chain(
-        [
-            optax.clip_by_global_norm(0.7) if clip else optax.identity(),
-            optax.sgd(lr, momentum=0.9) if sgd else optax.adam(lr, eps=1e-6),
-        ]
+        optax.clip_by_global_norm(0.7) if clip else optax.identity(),
+        optax.sgd(lr, momentum=0.9) if sgd else optax.adam(lr, eps=1e-6),
     )
 
     ring.ml.train_fn(
