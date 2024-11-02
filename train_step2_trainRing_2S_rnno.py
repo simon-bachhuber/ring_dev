@@ -126,9 +126,12 @@ def main(
                 path.split("/")[-1] + "_",
             )
         )
+        if i == 0:
+            T = X_val.shape[1]
+            print("T: ", T)
 
     opt = ring.ml.make_optimizer(
-        lr, episodes, int(6_000 / tbp), adap_clip=0.5, glob_clip=0.5
+        lr, episodes, int(T / tbp), adap_clip=None, glob_clip=1.0
     )
 
     ring.ml.train_fn(
