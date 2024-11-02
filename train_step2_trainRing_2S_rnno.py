@@ -44,6 +44,50 @@ class Transform:
         return X[:, None], qrel[:, None]
 
 
+class TransformPos:
+
+    def __init__(self, dof: int | None, rand_ori: bool):
+        assert dof in [1, 2, 3, None]
+        self.dof = dof
+        self.rand_ori = rand_ori
+
+    def __call__(self, ele: list):
+        X_d, y_d = ele
+
+        seg1, seg2 = X_d["seg1"], X_d["seg2"]
+        a1, a2 = seg1["acc"] / 9.81, seg2["acc"] / 9.81
+        g1, g2 = seg1["gyr"] / 3.14, seg2["gyr"] / 3.14
+        p1, p2 = seg1["imu_to_joint_m"], seg2["imu_to_joint_m"]
+
+        q1 = qmt.randomQuat() if self.rand_ori else np.array([1.0, 0, 0, 0])
+        q2 = qmt.randomQuat() if self.rand_ori else np.array([1.0, 0, 0, 0])
+        a1, g1, p1 = qmt.rotate(q1, a1), qmt.rotate(q1, g1), qmt.rotate(q1, p1)
+        a2, g2, p2 = qmt.rotate(q2, a2), qmt.rotate(q2, g2), qmt.rotate(q2, p2)
+        qrel = y_d["seg2"]
+        qrel = qmt.qmult(q1, qmt.qmult(qrel, qmt.qinv(q2)))
+
+        T = a1.shape[0]
+        F = 18 if self.dof is None else 21
+
+        dt = X_d.get("dt", None)
+        if dt is not None:
+            F += 1
+
+        X = np.zeros((T, F))
+        X[:, 0:3] = a1
+        X[:, 3:6] = a2
+        X[:, 6:9] = g1
+        X[:, 9:12] = g2
+        X[:, 12:15] = p1
+        X[:, 15:18] = p2
+        if self.dof is not None:
+            X[:, 17 + self.dof] = 1.0
+        if dt is not None:
+            X[:, -1] = dt * 10
+
+        return X[:, None], qrel[:, None]
+
+
 def _params(unique_id: str = ring.ml.unique_id()) -> str:
     home = "/home/woody/iwb3/iwb3004h/simon/" if ring.ml.on_cluster() else "~/"
     return home + f"params/{unique_id}.pickle"
@@ -68,6 +112,7 @@ def main(
     dof: bool = False,
     rand_ori: bool = False,
     tbp: int = 1000,
+    pos: bool = False,
 ):
     np.random.seed(seed)
 
@@ -75,11 +120,13 @@ def main(
         unique_id = ring.ml.unique_id()
         wandb.init(project=wandb_project, config=locals(), name=wandb_name)
 
+    transform = TransformPos if pos else Transform
+
     gen = dataloader_torch.dataset_to_generator(
         ConcatDataset(
             [
                 dataloader_torch.FolderOfPickleFilesDataset(
-                    p, Transform(i + 1 if dof else None, rand_ori)
+                    p, transform(i + 1 if dof else None, rand_ori)
                 )
                 for i, p in enumerate(paths.split(","))
             ]
@@ -109,7 +156,7 @@ def main(
     for i, p in enumerate(paths.split(",")):
         path = p + "_val"
         ds_val = dataloader_torch.FolderOfPickleFilesDataset(
-            path, Transform(i + 1 if dof else None, rand_ori)
+            path, transform(i + 1 if dof else None, rand_ori)
         )
         X_val, y_val = dataloader_torch.dataset_to_generator(ds_val, len(ds_val))(None)
         callbacks.append(
