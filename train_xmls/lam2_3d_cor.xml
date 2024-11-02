@@ -1,0 +1,17 @@
+<x_xy model="lam2">
+  <options dt="0.01" gravity="0.0 0.0 9.81"/>
+  <worldbody>
+    <body joint="free" name="seg1" damping="5.0 5.0 5.0 25.0 25.0 25.0">
+      <geom mass="1.0" type="box" dim=".2 .2 .2"/>
+      <body joint="frozen" name="imu1" pos_min="-.3 -.3 -.3" pos_max=".3 .3 .3">
+        <geom mass="0.1" type="box" dim=".2 .2 .2"/>
+      </body>
+      <body joint="spherical" name="seg2" damping="5.0 5.0 5.0">
+        <geom mass="1.0" type="box" dim=".2 .2 .2"/>
+        <body joint="frozen" name="imu2" pos_min="-.3 -.3 -.3" pos_max=".3 .3 .3">
+          <geom mass="0.1" type="box" dim=".2 .2 .2"/>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+</x_xy>

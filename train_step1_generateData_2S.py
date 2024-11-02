@@ -6,15 +6,24 @@ import ring
 from ring.utils import randomize_sys
 
 
+def finalize_fn(key, q, x, sys: ring.System):
+    idx_map = sys.idx_map("l")
+    X, y = {
+        f"seg{i}": dict(imu_to_joint_m=-sys.links.transform1.pos[idx_map[f"imu{i}"]])
+        for i in [1, 2]
+    }, dict()
+    return X, y
+
+
 def main(
     xml_path: str,
     size: int,
     output_path: str,
     configs: list[str] = ["standard", "expSlow", "expFast", "hinUndHer"],
     seed: int = 1,
-    anchors: Optional[list[str]] = ["seg1", "seg2"],
-    sampling_rates: list[float] = [40, 60, 80, 100, 120, 140, 160, 180, 200],
-    T: float = 150.0,
+    anchors: Optional[list[str]] = None,
+    # sampling_rates: list[float] = [40, 60, 80, 100, 120, 140, 160, 180, 200],
+    T: float = 60.0,  # 150
     motion_arti: bool = False,
 ):
     sys = ring.System.create(xml_path)
@@ -35,9 +44,10 @@ def main(
         randomize_joint_params=True,
         randomize_motion_artifacts=True,
         randomize_positions=True,
-        randomize_hz=True,
-        randomize_hz_kwargs=dict(sampling_rates=sampling_rates),
+        # randomize_hz=True,
+        # randomize_hz_kwargs=dict(sampling_rates=sampling_rates),
         cor=True,
+        finalize_fn=finalize_fn,
     ).to_folder(output_path, size, seed, overwrite=False)
 
 
