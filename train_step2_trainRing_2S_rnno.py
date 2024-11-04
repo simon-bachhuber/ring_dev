@@ -31,6 +31,7 @@ class Transform:
         a2, g2, p2 = qmt.rotate(q2, a2), qmt.rotate(q2, g2), qmt.rotate(q2, p2)
         qrel = y_d["seg2"]
         qrel = qmt.qmult(q1, qmt.qmult(qrel, qmt.qinv(q2)))
+        del q1, q2
 
         F = 12
         if self.dof is not None:
@@ -38,7 +39,7 @@ class Transform:
         if self.pos:
             F += 6
         if self.use_vqf:
-            F += 8
+            F += 12
         dt = X_d.get("dt", None)
         if dt is not None:
             F += 1
@@ -60,13 +61,12 @@ class Transform:
             i += 6
         if self.use_vqf:
             _dt = 0.01 if dt is None else dt
-            X[:, i : (i + 4)] = qmt.oriEstVQF(  # noqa: E203
-                g1, a1, params=dict(Ts=float(_dt))
-            )
-            X[:, (i + 4) : (i + 8)] = qmt.oriEstVQF(  # noqa: E203
-                g2, a2, params=dict(Ts=float(_dt))
-            )
-            i += 8
+            q1 = qmt.oriEstVQF(g1, a1, params=dict(Ts=float(_dt)))
+            q2 = qmt.oriEstVQF(g2, a2, params=dict(Ts=float(_dt)))
+            X[:, i : (i + 4)] = q1  # noqa: E203
+            X[:, (i + 4) : (i + 8)] = q2  # noqa: E203
+            X[:, (i + 8) : (i + 12)] = qmt.qmult(qmt.qinv(q1), q2)  # noqa: E203
+            i += 12
         if dt is not None:
             X[:, -1] = dt * 10
 
