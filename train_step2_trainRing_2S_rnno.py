@@ -10,53 +10,19 @@ import wandb
 
 class Transform:
 
-    def __init__(self, dof: int | None, rand_ori: bool):
+    def __init__(self, dof: int | None, rand_ori: bool, pos: bool, use_vqf: bool):
         assert dof in [1, 2, 3, None]
         self.dof = dof
         self.rand_ori = rand_ori
+        self.pos = pos
+        self.use_vqf = use_vqf
 
     def __call__(self, ele: list):
         X_d, y_d = ele
 
         seg1, seg2 = X_d["seg1"], X_d["seg2"]
-        a1, a2 = seg1["acc"] / 9.81, seg2["acc"] / 9.81
-        g1, g2 = seg1["gyr"] / 3.14, seg2["gyr"] / 3.14
-
-        q1 = qmt.randomQuat() if self.rand_ori else np.array([1.0, 0, 0, 0])
-        q2 = qmt.randomQuat() if self.rand_ori else np.array([1.0, 0, 0, 0])
-        a1, g1 = qmt.rotate(q1, a1), qmt.rotate(q1, g1)
-        a2, g2 = qmt.rotate(q2, a2), qmt.rotate(q2, g2)
-        qrel = y_d["seg2"]
-        qrel = qmt.qmult(q1, qmt.qmult(qrel, qmt.qinv(q2)))
-
-        T = a1.shape[0]
-        F = 13 if self.dof is None else 16
-
-        X = np.zeros((T, F))
-        X[:, 0:3] = a1
-        X[:, 3:6] = a2
-        X[:, 6:9] = g1
-        X[:, 9:12] = g2
-        X[:, 12] = X_d["dt"] * 10
-        if self.dof is not None:
-            X[:, 12 + self.dof] = 1.0
-
-        return X[:, None], qrel[:, None]
-
-
-class TransformPos:
-
-    def __init__(self, dof: int | None, rand_ori: bool):
-        assert dof in [1, 2, 3, None]
-        self.dof = dof
-        self.rand_ori = rand_ori
-
-    def __call__(self, ele: list):
-        X_d, y_d = ele
-
-        seg1, seg2 = X_d["seg1"], X_d["seg2"]
-        a1, a2 = seg1["acc"] / 9.81, seg2["acc"] / 9.81
-        g1, g2 = seg1["gyr"] / 3.14, seg2["gyr"] / 3.14
+        a1, a2 = seg1["acc"], seg2["acc"]
+        g1, g2 = seg1["gyr"], seg2["gyr"]
         p1, p2 = seg1["imu_to_joint_m"], seg2["imu_to_joint_m"]
 
         q1 = qmt.randomQuat() if self.rand_ori else np.array([1.0, 0, 0, 0])
@@ -66,22 +32,41 @@ class TransformPos:
         qrel = y_d["seg2"]
         qrel = qmt.qmult(q1, qmt.qmult(qrel, qmt.qinv(q2)))
 
-        T = a1.shape[0]
-        F = 18 if self.dof is None else 21
-
+        F = 12
+        if self.dof is not None:
+            F += 3
+        if self.pos:
+            F += 6
+        if self.use_vqf:
+            F += 8
         dt = X_d.get("dt", None)
         if dt is not None:
             F += 1
 
-        X = np.zeros((T, F))
-        X[:, 0:3] = a1
-        X[:, 3:6] = a2
-        X[:, 6:9] = g1
-        X[:, 9:12] = g2
-        X[:, 12:15] = p1
-        X[:, 15:18] = p2
+        X = np.zeros((a1.shape[0], F))
+        grav, pi = 9.81, 3.14
+        X[:, 0:3] = a1 / grav
+        X[:, 3:6] = a2 / grav
+        X[:, 6:9] = g1 / pi
+        X[:, 9:12] = g2 / pi
+
+        i = 12
         if self.dof is not None:
-            X[:, 17 + self.dof] = 1.0
+            X[:, i + self.dof - 1] = 1.0
+            i += 3
+        if self.pos:
+            X[:, i : (i + 3)] = p1  # noqa: E203
+            X[:, (i + 3) : (i + 6)] = p2  # noqa: E203
+            i += 6
+        if self.use_vqf:
+            _dt = 0.01 if dt is None else dt
+            X[:, i : (i + 4)] = qmt.oriEstVQF(  # noqa: E203
+                g1, a1, params=dict(Ts=float(_dt))
+            )
+            X[:, (i + 4) : (i + 8)] = qmt.oriEstVQF(  # noqa: E203
+                g2, a2, params=dict(Ts=float(_dt))
+            )
+            i += 8
         if dt is not None:
             X[:, -1] = dt * 10
 
@@ -113,6 +98,7 @@ def main(
     rand_ori: bool = False,
     tbp: int = 1000,
     pos: bool = False,
+    use_vqf: bool = False,
 ):
     np.random.seed(seed)
 
@@ -120,13 +106,13 @@ def main(
         unique_id = ring.ml.unique_id()
         wandb.init(project=wandb_project, config=locals(), name=wandb_name)
 
-    transform = TransformPos if pos else Transform
+    transform = lambda dof: Transform(dof, rand_ori, pos, use_vqf)
 
     gen = dataloader_torch.dataset_to_generator(
         ConcatDataset(
             [
                 dataloader_torch.FolderOfPickleFilesDataset(
-                    p, transform(i + 1 if dof else None, rand_ori)
+                    p, transform(i + 1 if dof else None)
                 )
                 for i, p in enumerate(paths.split(","))
             ]
@@ -156,7 +142,7 @@ def main(
     for i, p in enumerate(paths.split(",")):
         path = p + "_val"
         ds_val = dataloader_torch.FolderOfPickleFilesDataset(
-            path, transform(i + 1 if dof else None, rand_ori)
+            path, transform(i + 1 if dof else None)
         )
         X_val, y_val = dataloader_torch.dataset_to_generator(ds_val, len(ds_val))(None)
         callbacks.append(

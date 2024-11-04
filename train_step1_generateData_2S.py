@@ -2,8 +2,32 @@ from dataclasses import replace
 from typing import Optional
 
 import fire
+import numpy as np
 import ring
 from ring.utils import randomize_sys
+
+sys_str = """
+<x_xy model="lam2">
+  <options dt="0.01" gravity="0.0 0.0 9.81"/>
+  <worldbody>
+    <body joint="free" name="seg1" damping="5.0 5.0 5.0 25.0 25.0 25.0">
+      <geom mass="1.0" type="box" dim=".2 .2 .2"/>
+      <body joint="frozen" name="imu1" pos_min="-.3 -.3 -.3" pos_max=".3 .3 .3">
+        <geom mass="0.1" type="box" dim=".2 .2 .2"/>
+      </body>
+      <body joint="spherical" name="seg2" damping="5.0 5.0 5.0">
+        <geom mass="1.0" type="box" dim=".2 .2 .2"/>
+        <body joint="frozen" name="imu2" pos_min="-.3 -.3 -.3" pos_max=".3 .3 .3">
+          <geom mass="0.1" type="box" dim=".2 .2 .2"/>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+</x_xy>
+"""
+
+dof_joint_types = {1: "rr", 2: "rsaddle"}
+dof_joint_dampings = {1: np.array([3.0]), 2: np.array([3.0, 3.0])}
 
 
 def finalize_fn(key, q, x, sys: ring.System):
@@ -16,7 +40,6 @@ def finalize_fn(key, q, x, sys: ring.System):
 
 
 def main(
-    xml_path: str,
     size: int,
     output_path: str,
     configs: list[str] = ["standard", "expSlow", "expFast", "hinUndHer"],
@@ -25,8 +48,14 @@ def main(
     # sampling_rates: list[float] = [40, 60, 80, 100, 120, 140, 160, 180, 200],
     T: float = 60.0,  # 150
     motion_arti: bool = False,
+    dof: Optional[int] = None,
 ):
-    sys = ring.System.create(xml_path)
+    sys = ring.System.create(sys_str)
+    if dof is not None:
+        assert dof in [1, 2], "Only 1D/2D/3D joint available, and it already is 3D"
+        sys = sys.change_joint_type(
+            "seg2", dof_joint_types[dof], new_damp=dof_joint_dampings[dof]
+        )
 
     ring.RCMG(
         randomize_sys.randomize_anchors(sys, anchors) if anchors else sys,
