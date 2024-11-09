@@ -215,10 +215,12 @@ def main(
     )
 
 
-def ray_main(
-    paths: str, n_cpus_per_job: int, n_gpus_per_job: int, walltime_hours: float
-):
+def ray_main(paths: str, n_gpus_per_job: int, walltime_hours: float):
     ray.init()
+    num_cpus = ray.available_resources().get("CPU", 0)
+    num_gpus = ray.available_resources().get("GPU", 0)
+    n_jobs = num_gpus // n_gpus_per_job
+    n_cpus_per_job = num_cpus // n_jobs
 
     def trainable(config):
         main(
@@ -232,7 +234,7 @@ def ray_main(
             seed=config.get("seed", 1),
             use_wandb=False,
             lr=config.get("lr", 1e-3),
-            num_workers=n_cpus_per_job,
+            num_workers=int(n_cpus_per_job // 2),
             lstm=config.get("celltype", "gru") == "lstm",
             tbp=config.get("tbp", 1000),
             pos=config.get("use_pos", False),
