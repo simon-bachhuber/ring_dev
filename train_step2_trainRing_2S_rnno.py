@@ -2,10 +2,39 @@ import fire
 import jax.numpy as jnp
 import numpy as np
 import qmt
+import ray
+from ray import train
+from ray import tune
+from ray.tune.schedulers import ASHAScheduler
 import ring
+from ring.ml.ml_utils import MixinLogger
 from ring.utils import dataloader_torch
 from torch.utils.data import ConcatDataset
 import wandb
+
+
+class RayLogger(MixinLogger):
+    def __init__(self):
+        self._last_step = None
+        self._reports = dict()
+
+    def log_params(self, path):
+        pass
+
+    def log_command_output(self, command):
+        pass
+
+    def log_key_value(self, key, value, step=None):
+        if self._last_step is None:
+            self._last_step = step
+
+        if step > self._last_step and len(self._reports) > 0:
+            self._reports.update({"i_episode": self._last_step})
+            train.report(self._reports)
+            self._last_step = step
+            self._reports = dict()
+
+        self._reports.update({key: value})
 
 
 class Transform:
@@ -17,7 +46,7 @@ class Transform:
         self.pos = pos
         self.use_vqf = use_vqf
 
-    def __call__(self, ele: list):
+    def __call__(self, ele):
         X_d, y_d = ele
 
         seg1, seg2 = X_d["seg1"], X_d["seg2"]
@@ -45,7 +74,7 @@ class Transform:
             F += 1
 
         X = np.zeros((a1.shape[0], F))
-        grav, pi = 9.81, 3.14
+        grav, pi = 9.81, 2.2
         X[:, 0:3] = a1 / grav
         X[:, 3:6] = a2 / grav
         X[:, 6:9] = g1 / pi
@@ -99,6 +128,9 @@ def main(
     tbp: int = 1000,
     pos: bool = False,
     use_vqf: bool = False,
+    loggers=[],
+    adap_clip=None,
+    glob_clip=1.0,
 ):
     np.random.seed(seed)
 
@@ -161,10 +193,10 @@ def main(
         )
         if i == 0:
             T = X_val.shape[1]
-            print("T: ", T)
+            # print("T: ", T)
 
     opt = ring.ml.make_optimizer(
-        lr, episodes, int(T / tbp), adap_clip=None, glob_clip=1.0
+        lr, episodes, int(T / tbp), adap_clip=adap_clip, glob_clip=glob_clip
     )
 
     ring.ml.train_fn(
@@ -172,14 +204,78 @@ def main(
         episodes,
         net,
         opt,
-        callback_kill_after_seconds=23.5 * 3600,
+        # callback_kill_after_seconds=23.5 * 3600,
         callback_kill_if_nan=True,
         callback_kill_if_grads_larger=1e32,
         seed_network=seed,
         callback_save_params=_params(),
         callbacks=callbacks,
         tbp=tbp,
+        loggers=loggers,
     )
+
+
+def ray_main(
+    paths: str, n_cpus_per_job: int, n_gpus_per_job: int, walltime_hours: float
+):
+    ray.init()
+
+    def trainable(config):
+        main(
+            paths,
+            bs=config.get("bs", 64),
+            episodes=config.get("n_decay_episodes", 1500),
+            rnn_w=config.get("rnn_w", 200),
+            rnn_d=config.get("rnn_d", 2),
+            lin_w=config.get("lin_w", 200),
+            lin_d=config.get("lin_d", 2),
+            seed=config.get("seed", 1),
+            use_wandb=False,
+            lr=config.get("lr", 1e-3),
+            num_workers=n_cpus_per_job,
+            lstm=config.get("celltype", "gru") == "lstm",
+            tbp=config.get("tbp", 1000),
+            pos=config.get("use_pos", False),
+            use_vqf=config.get("use_vqf", False),
+            adap_clip=config.get("adap_clip", 100),
+            glob_clip=config.get("glob_clip", 1.0),
+            loggers=[RayLogger()],
+        )
+
+    trainable_with_resources = tune.with_resources(
+        trainable, {"gpu": n_gpus_per_job, "cpu": n_cpus_per_job}
+    )
+    param_space = {
+        "bs": tune.choice([16, 32, 64, 128, 256]),
+        "n_decay_episodes": tune.randint(100, 10000),
+        "rnn_w": tune.choice([1, 2, 3]),
+        "rnn_d": tune.choice([100, 200, 400, 800]),
+        "lin_w": tune.choice([1, 2, 3]),
+        "lin_d": tune.choice([100, 200, 400, 800]),
+        "seed": tune.randint(0, 1000),
+        "lr": tune.loguniform(1e-5, 1e-2),
+        "celltype": tune.choice(["gru", "lstm"]),
+        "tbp": tune.choice([300, 600, 1000, 2000, 6000]),
+        "use_pos": tune.choice([True, False]),
+        "use_vqf": tune.choice([True, False]),
+        "adap_clip": tune.choice([0.1, 0.2, 0.5, 1.0, 100.0]),
+        "glob_clip": tune.choice([0.1, 0.2, 0.5, 1.0, 100.0]),
+    }
+
+    tuner = tune.Tuner(
+        trainable_with_resources,
+        param_space=param_space,
+        tune_config=tune.TuneConfig(
+            mode="min",
+            metric="mae_deg_link0",
+            time_budget_s=walltime_hours * 3600,
+            num_samples=-1,
+            scheduler=ASHAScheduler(
+                "i_episode", "mae_deg_link0", "min", max_t=5000, grace_period=4
+            ),
+        ),
+    )
+    tuner.fit()
 
 
 if __name__ == "__main__":
