@@ -1,7 +1,8 @@
+import os
+
 import fire
 import jax.numpy as jnp
 import numpy as np
-import qmt
 import ray
 from ray import train
 from ray import tune
@@ -11,6 +12,8 @@ from ring.ml.ml_utils import MixinLogger
 from ring.utils import dataloader_torch
 from torch.utils.data import ConcatDataset
 import wandb
+
+from train_support.transform_2S import Transform
 
 
 class RayLogger(MixinLogger):
@@ -28,78 +31,13 @@ class RayLogger(MixinLogger):
         if self._last_step is None:
             self._last_step = step
 
-        if step > self._last_step and len(self._reports) > 0:
+        if step is not None and step > self._last_step and len(self._reports) > 0:
             self._reports.update({"i_episode": self._last_step})
             train.report(self._reports)
             self._last_step = step
             self._reports = dict()
 
         self._reports.update({key: value})
-
-
-class Transform:
-
-    def __init__(self, dof: int | None, rand_ori: bool, pos: bool, use_vqf: bool):
-        assert dof in [1, 2, 3, None]
-        self.dof = dof
-        self.rand_ori = rand_ori
-        self.pos = pos
-        self.use_vqf = use_vqf
-
-    def __call__(self, ele):
-        X_d, y_d = ele
-
-        seg1, seg2 = X_d["seg1"], X_d["seg2"]
-        a1, a2 = seg1["acc"], seg2["acc"]
-        g1, g2 = seg1["gyr"], seg2["gyr"]
-        p1, p2 = seg1["imu_to_joint_m"], seg2["imu_to_joint_m"]
-
-        q1 = qmt.randomQuat() if self.rand_ori else np.array([1.0, 0, 0, 0])
-        q2 = qmt.randomQuat() if self.rand_ori else np.array([1.0, 0, 0, 0])
-        a1, g1, p1 = qmt.rotate(q1, a1), qmt.rotate(q1, g1), qmt.rotate(q1, p1)
-        a2, g2, p2 = qmt.rotate(q2, a2), qmt.rotate(q2, g2), qmt.rotate(q2, p2)
-        qrel = y_d["seg2"]
-        qrel = qmt.qmult(q1, qmt.qmult(qrel, qmt.qinv(q2)))
-        del q1, q2
-
-        F = 12
-        if self.dof is not None:
-            F += 3
-        if self.pos:
-            F += 6
-        if self.use_vqf:
-            F += 12
-        dt = X_d.get("dt", None)
-        if dt is not None:
-            F += 1
-
-        X = np.zeros((a1.shape[0], F))
-        grav, pi = 9.81, 2.2
-        X[:, 0:3] = a1 / grav
-        X[:, 3:6] = a2 / grav
-        X[:, 6:9] = g1 / pi
-        X[:, 9:12] = g2 / pi
-
-        i = 12
-        if self.dof is not None:
-            X[:, i + self.dof - 1] = 1.0
-            i += 3
-        if self.pos:
-            X[:, i : (i + 3)] = p1  # noqa: E203
-            X[:, (i + 3) : (i + 6)] = p2  # noqa: E203
-            i += 6
-        if self.use_vqf:
-            _dt = 0.01 if dt is None else dt
-            q1 = qmt.oriEstVQF(g1, a1, params=dict(Ts=float(_dt)))
-            q2 = qmt.oriEstVQF(g2, a2, params=dict(Ts=float(_dt)))
-            X[:, i : (i + 4)] = q1  # noqa: E203
-            X[:, (i + 4) : (i + 8)] = q2  # noqa: E203
-            X[:, (i + 8) : (i + 12)] = qmt.qmult(qmt.qinv(q1), q2)  # noqa: E203
-            i += 12
-        if dt is not None:
-            X[:, -1] = dt * 10
-
-        return X[:, None], qrel[:, None]
 
 
 def _params(unique_id: str = ring.ml.unique_id()) -> str:
@@ -131,6 +69,7 @@ def main(
     loggers=[],
     adap_clip=None,
     glob_clip=1.0,
+    n_decay_episodes=None,
 ):
     np.random.seed(seed)
 
@@ -195,8 +134,9 @@ def main(
             T = X_val.shape[1]
             # print("T: ", T)
 
+    n_decay_episodes = episodes if n_decay_episodes is None else n_decay_episodes
     opt = ring.ml.make_optimizer(
-        lr, episodes, int(T / tbp), adap_clip=adap_clip, glob_clip=glob_clip
+        lr, n_decay_episodes, int(T / tbp), adap_clip=adap_clip, glob_clip=glob_clip
     )
 
     ring.ml.train_fn(
@@ -215,21 +155,29 @@ def main(
     )
 
 
+max_t = 5000
+
+
 def ray_main(paths: str, n_gpus_per_job: int, walltime_hours: float):
+    os.environ["TQDM_DISABLE"] = "1"
+
     ray.init()
     num_cpus = ray.available_resources().get("CPU", 0)
     num_gpus = ray.available_resources().get("GPU", 0)
-    n_jobs = num_gpus // n_gpus_per_job
-    n_cpus_per_job = num_cpus // n_jobs
+    if num_gpus > 0:
+        n_jobs = num_gpus // n_gpus_per_job
+        n_cpus_per_job = num_cpus // n_jobs
+    else:
+        n_cpus_per_job = 4
 
     def trainable(config):
         main(
             paths,
-            bs=config.get("bs", 64),
-            episodes=config.get("n_decay_episodes", 1500),
-            rnn_w=config.get("rnn_w", 200),
+            bs=config.get("bs", 4),
+            n_decay_episodes=config.get("n_decay_episodes", 1500),
+            rnn_w=config.get("rnn_w", 20),
             rnn_d=config.get("rnn_d", 2),
-            lin_w=config.get("lin_w", 200),
+            lin_w=config.get("lin_w", 20),
             lin_d=config.get("lin_d", 2),
             seed=config.get("seed", 1),
             use_wandb=False,
@@ -242,27 +190,32 @@ def ray_main(paths: str, n_gpus_per_job: int, walltime_hours: float):
             adap_clip=config.get("adap_clip", 100),
             glob_clip=config.get("glob_clip", 1.0),
             loggers=[RayLogger()],
+            episodes=max_t + 100,
         )
 
     trainable_with_resources = tune.with_resources(
         trainable, {"gpu": n_gpus_per_job, "cpu": n_cpus_per_job}
     )
-    param_space = {
-        "bs": tune.choice([16, 32, 64, 128, 256]),
-        "n_decay_episodes": tune.randint(100, 10000),
-        "rnn_w": tune.choice([1, 2, 3]),
-        "rnn_d": tune.choice([100, 200, 400, 800]),
-        "lin_w": tune.choice([1, 2, 3]),
-        "lin_d": tune.choice([100, 200, 400, 800]),
-        "seed": tune.randint(0, 1000),
-        "lr": tune.loguniform(1e-5, 1e-2),
-        "celltype": tune.choice(["gru", "lstm"]),
-        "tbp": tune.choice([300, 600, 1000, 2000, 6000]),
-        "use_pos": tune.choice([True, False]),
-        "use_vqf": tune.choice([True, False]),
-        "adap_clip": tune.choice([0.1, 0.2, 0.5, 1.0, 100.0]),
-        "glob_clip": tune.choice([0.1, 0.2, 0.5, 1.0, 100.0]),
-    }
+
+    if ring.ml.on_cluster():
+        param_space = {
+            "bs": tune.choice([16, 32, 64, 128, 256]),
+            "n_decay_episodes": tune.randint(100, 10000),
+            "rnn_w": tune.choice([1, 2, 3]),
+            "rnn_d": tune.choice([100, 200, 400, 800]),
+            "lin_w": tune.choice([1, 2, 3]),
+            "lin_d": tune.choice([100, 200, 400, 800]),
+            "seed": tune.randint(0, 1000),
+            "lr": tune.loguniform(1e-5, 1e-2),
+            "celltype": tune.choice(["gru", "lstm"]),
+            "tbp": tune.choice([300, 600, 1000, 2000, 6000]),
+            "use_pos": tune.choice([True, False]),
+            "use_vqf": tune.choice([True, False]),
+            "adap_clip": tune.choice([0.1, 0.2, 0.5, 1.0, 100.0]),
+            "glob_clip": tune.choice([0.1, 0.2, 0.5, 1.0, 100.0]),
+        }
+    else:
+        param_space = {}
 
     tuner = tune.Tuner(
         trainable_with_resources,
@@ -271,9 +224,9 @@ def ray_main(paths: str, n_gpus_per_job: int, walltime_hours: float):
             mode="min",
             metric="mae_deg_link0",
             time_budget_s=walltime_hours * 3600,
-            num_samples=-1,
+            num_samples=-1 if ring.ml.on_cluster() else 1,
             scheduler=ASHAScheduler(
-                "i_episode", "mae_deg_link0", "min", max_t=5000, grace_period=4
+                "i_episode", max_t=max_t if ring.ml.on_cluster() else 10, grace_period=4
             ),
         ),
     )
