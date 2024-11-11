@@ -158,10 +158,17 @@ def main(
 max_t = 5000
 
 
-def ray_main(paths: str, n_gpus_per_job: int, walltime_hours: float):
-    os.environ["TQDM_DISABLE"] = "1"
+def ray_main(
+    paths: str,
+    n_gpus_per_job: int,
+    walltime_hours: float,
+    local_mode: bool = False,
+    tqdm: bool = False,
+):
+    if not tqdm:
+        os.environ["TQDM_DISABLE"] = "1"
 
-    ray.init()
+    ray.init(local_mode=local_mode)
     num_cpus = ray.available_resources().get("CPU", 0)
     num_gpus = ray.available_resources().get("GPU", 0)
     if num_gpus > 0:
