@@ -233,7 +233,9 @@ def ray_main(
             time_budget_s=walltime_hours * 3600,
             num_samples=-1 if ring.ml.on_cluster() else 1,
             scheduler=ASHAScheduler(
-                "i_episode", max_t=max_t if ring.ml.on_cluster() else 10, grace_period=4
+                "i_episode",
+                max_t=max_t if ring.ml.on_cluster() else 10,
+                grace_period=50,
             ),
         ),
     )
