@@ -62,6 +62,8 @@ def main(
         [replace(ring.MotionConfig.from_register(c), T=T) for c in configs],
         add_X_imus=True,
         add_y_relpose=True,
+        add_y_rootfull=True,
+        add_y_rootfull_kwargs=dict(child_to_parent=True),
         dynamic_simulation=True,
         imu_motion_artifacts=motion_arti,
         imu_motion_artifacts_kwargs=dict(
