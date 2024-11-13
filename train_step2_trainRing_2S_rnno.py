@@ -206,20 +206,24 @@ def ray_main(
 
     if ring.ml.on_cluster():
         param_space = {
-            "bs": tune.choice([64, 128, 256]),
+            "bs": tune.choice([128, 256]),
             "n_decay_episodes": tune.randint(100, 10000),
-            "rnn_d": tune.choice([1, 2, 3]),
-            "rnn_w": tune.choice([100, 200, 400, 600]),
-            "lin_d": tune.choice([1, 2]),
+            "rnn_d": tune.choice([2, 3]),
+            "rnn_w": tune.choice([200, 400, 600]),
+            "lin_d": tune.choice(
+                [
+                    1,
+                ]
+            ),
             "lin_w": tune.choice([100, 200, 400, 600]),
             "seed": tune.randint(0, 1000),
             "lr": tune.loguniform(1e-5, 1e-2),
             # "celltype": tune.choice(["gru", "lstm"]),
-            "tbp": tune.choice([300, 600, 1000]),
+            "tbp": tune.choice([100, 200, 300, 600, 1000]),
             "use_pos": tune.choice([True, False]),
             "use_vqf": tune.choice([True, False]),
-            "adap_clip": tune.choice([0.1, 0.2, 0.5, 1.0]),
-            "glob_clip": tune.choice([0.1, 0.2, 0.5, 1.0]),
+            "adap_clip": tune.choice([0.2, 0.5, 1.0]),
+            "glob_clip": tune.choice([0.2, 0.5, 1.0]),
         }
     else:
         param_space = {}
