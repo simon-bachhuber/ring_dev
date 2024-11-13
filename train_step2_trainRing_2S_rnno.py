@@ -209,7 +209,7 @@ def ray_main(
             "bs": tune.choice([128, 256]),
             "n_decay_episodes": tune.randint(100, 10000),
             "rnn_d": tune.choice([2, 3]),
-            "rnn_w": tune.choice([200, 400, 600]),
+            "rnn_w": tune.choice([200, 400, 600, 800]),
             "lin_d": tune.choice(
                 [
                     1,
