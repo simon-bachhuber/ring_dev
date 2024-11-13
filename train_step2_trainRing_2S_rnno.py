@@ -223,8 +223,8 @@ def ray_main(
             "tbp": tune.choice([100, 200, 300, 600, 1000]),
             "use_pos": tune.choice([True, False]),
             "use_vqf": tune.choice([True, False]),
-            "adap_clip": tune.choice([0.2, 0.5, 1.0]),
-            "glob_clip": tune.choice([0.2, 0.5, 1.0]),
+            "adap_clip": tune.choice([0.2, 0.5, 1.0, None]),
+            "glob_clip": tune.choice([0.2, 0.5, 1.0, None]),
             "layernorm": tune.choice([True, False]),
         }
     else:
