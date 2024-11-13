@@ -185,7 +185,7 @@ def ray_main(
             rnn_w=config.get("rnn_w", 20),
             rnn_d=config.get("rnn_d", 2),
             lin_w=config.get("lin_w", 20),
-            lin_d=config.get("lin_d", 2),
+            lin_d=config.get("lin_d", 0),
             seed=config.get("seed", 1),
             use_wandb=False,
             lr=config.get("lr", 1e-3),
@@ -212,6 +212,7 @@ def ray_main(
             "rnn_w": tune.choice([200, 400, 600, 800]),
             "lin_d": tune.choice(
                 [
+                    0,
                     1,
                 ]
             ),
@@ -224,6 +225,7 @@ def ray_main(
             "use_vqf": tune.choice([True, False]),
             "adap_clip": tune.choice([0.2, 0.5, 1.0]),
             "glob_clip": tune.choice([0.2, 0.5, 1.0]),
+            "layernorm": tune.choice([True, False]),
         }
     else:
         param_space = {}
@@ -239,7 +241,7 @@ def ray_main(
             scheduler=ASHAScheduler(
                 "i_episode",
                 max_t=max_t if ring.ml.on_cluster() else 10,
-                grace_period=100,
+                grace_period=100 if ring.ml.on_cluster() else 10,
             ),
         ),
     )
