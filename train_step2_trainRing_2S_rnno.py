@@ -41,7 +41,7 @@ class RayLogger(MixinLogger):
 
 
 def _params(unique_id: str = ring.ml.unique_id()) -> str:
-    home = "/home/woody/iwb3/iwb3004h/simon/" if ring.ml.on_cluster() else "~/"
+    home = "/bigwork/nhkbbach/" if ring.ml.on_cluster() else "~/"
     return home + f"params/{unique_id}.pickle"
 
 
@@ -162,13 +162,12 @@ def ray_main(
     paths: str,
     n_gpus_per_job: int,
     walltime_hours: float,
-    local_mode: bool = False,
     tqdm: bool = False,
 ):
     if not tqdm:
         os.environ["TQDM_DISABLE"] = "1"
 
-    ray.init(local_mode=local_mode)
+    ray.init()
     num_cpus = ray.available_resources().get("CPU", 0)
     num_gpus = ray.available_resources().get("GPU", 0)
     if num_gpus > 0:
@@ -209,22 +208,22 @@ def ray_main(
             "bs": tune.choice([128, 256]),
             "n_decay_episodes": tune.randint(100, 10000),
             "rnn_d": tune.choice([2, 3]),
-            "rnn_w": tune.choice([200, 400, 600, 800]),
+            "rnn_w": tune.choice([600, 800]),
             "lin_d": tune.choice(
                 [
                     0,
                     1,
                 ]
             ),
-            "lin_w": tune.choice([100, 200, 400, 600]),
+            "lin_w": tune.choice([400, 600]),
             "seed": tune.randint(0, 1000),
-            "lr": tune.loguniform(1e-5, 1e-2),
+            "lr": tune.loguniform(5e-5, 3e-4),
             # "celltype": tune.choice(["gru", "lstm"]),
-            "tbp": tune.choice([100, 200, 300, 600, 1000]),
+            "tbp": tune.choice([150, 300, 600]),
             "use_pos": tune.choice([True, False]),
             "use_vqf": tune.choice([True, False]),
-            "adap_clip": tune.choice([0.2, 0.5, 1.0, None]),
-            "glob_clip": tune.choice([0.2, 0.5, 1.0, None]),
+            "adap_clip": tune.choice([0.2, 1.0, None]),
+            "glob_clip": tune.choice([0.2, 1.0, None]),
             "layernorm": tune.choice([True, False]),
         }
     else:
@@ -243,6 +242,7 @@ def ray_main(
                 max_t=max_t if ring.ml.on_cluster() else 10,
                 grace_period=100 if ring.ml.on_cluster() else 10,
             ),
+            max_concurrent_trials=4,
         ),
     )
     tuner.fit()
