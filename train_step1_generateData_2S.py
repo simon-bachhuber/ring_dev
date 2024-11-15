@@ -52,10 +52,12 @@ def main(
 ):
     sys = ring.System.create(sys_str)
     if dof is not None:
-        assert dof in [1, 2], "Only 1D/2D/3D joint available, and it already is 3D"
-        sys = sys.change_joint_type(
-            "seg2", dof_joint_types[dof], new_damp=dof_joint_dampings[dof]
-        )
+        assert dof in [1, 2, 3], "Only 1D/2D/3D joint available"
+        # it is already a 3D joint, so only do something if dof is not 3
+        if dof != 3:
+            sys = sys.change_joint_type(
+                "seg2", dof_joint_types[dof], new_damp=dof_joint_dampings[dof]
+            )
 
     ring.RCMG(
         randomize_sys.randomize_anchors(sys, anchors) if anchors else sys,
