@@ -155,7 +155,7 @@ def main(
     )
 
 
-max_t = 5000
+max_t = 10_000
 
 
 def ray_main(
@@ -197,6 +197,8 @@ def ray_main(
             glob_clip=config.get("glob_clip", 1.0),
             loggers=[RayLogger()],
             episodes=max_t + 100,
+            dof=config.get("dof", False),
+            rand_ori=config.get("rand_ori", False),
         )
 
     trainable_with_resources = tune.with_resources(
@@ -205,10 +207,10 @@ def ray_main(
 
     if ring.ml.on_cluster():
         param_space = {
-            "bs": tune.choice([128, 256]),
-            "n_decay_episodes": tune.randint(100, 10000),
+            "bs": tune.choice([256]),
+            "n_decay_episodes": tune.randint(4000, 11000),
             "rnn_d": tune.choice([2, 3]),
-            "rnn_w": tune.choice([600, 800]),
+            "rnn_w": tune.choice([800]),
             "lin_d": tune.choice(
                 [
                     0,
@@ -221,10 +223,12 @@ def ray_main(
             # "celltype": tune.choice(["gru", "lstm"]),
             "tbp": tune.choice([150, 300, 600]),
             "use_pos": tune.choice([True, False]),
-            "use_vqf": tune.choice([True, False]),
-            "adap_clip": tune.choice([0.2, 1.0, None]),
-            "glob_clip": tune.choice([0.2, 1.0, None]),
-            "layernorm": tune.choice([True, False]),
+            "use_vqf": tune.choice([False]),
+            "adap_clip": tune.choice([1.0, None]),
+            "glob_clip": tune.choice([1.0, None]),
+            "layernorm": tune.choice([True]),
+            "dof": tune.choice([False, True]),
+            "rand_ori": tune.choice([False, True]),
         }
     else:
         param_space = {}
