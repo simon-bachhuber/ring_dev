@@ -10,10 +10,12 @@ sys_str = """
 <x_xy model="lam2">
   <options dt="0.01" gravity="0.0 0.0 9.81"/>
   <worldbody>
-    <body joint="free" name="seg1" damping="5.0 5.0 5.0 25.0 25.0 25.0">
-      <geom mass="1.0" type="box" dim=".2 .2 .2"/>
-      <body joint="frozen" name="imu1" pos_min="-.3 -.3 -.3" pos_max=".3 .3 .3">
-        <geom mass="0.1" type="box" dim=".2 .2 .2"/>
+    <body joint="free" name="floatBase" damping="5.0 5.0 5.0 25.0 25.0 25.0">
+      <body joint="frozen" name="seg1">
+        <geom mass="1.0" type="box" dim=".2 .2 .2"/>
+        <body joint="frozen" name="imu1" pos_min="-.3 -.3 -.3" pos_max=".3 .3 .3">
+          <geom mass="0.1" type="box" dim=".2 .2 .2"/>
+        </body>
       </body>
       <body joint="spherical" name="seg2" damping="5.0 5.0 5.0">
         <geom mass="1.0" type="box" dim=".2 .2 .2"/>
@@ -26,8 +28,13 @@ sys_str = """
 </x_xy>
 """
 
-dof_joint_types = {1: "rr", 2: "rsaddle"}
-dof_joint_dampings = {1: np.array([3.0]), 2: np.array([3.0, 3.0])}
+dof_joint_types = {0: "frozen", 1: "rr", 2: "rsaddle", 3: "spherical"}
+dof_joint_dampings = {
+    0: np.array([]),
+    1: np.array([3.0]),
+    2: np.array([3.0, 3.0]),
+    3: np.array([5.0, 5.0, 5.0]),
+}
 
 
 def finalize_fn(key, q, x, sys: ring.System):
@@ -48,16 +55,16 @@ def main(
     # sampling_rates: list[float] = [40, 60, 80, 100, 120, 140, 160, 180, 200],
     T: float = 60.0,  # 150
     motion_arti: bool = False,
-    dof: Optional[int] = None,
+    dof1: int = 0,
+    dof2: int = 3,
 ):
     sys = ring.System.create(sys_str)
-    if dof is not None:
-        assert dof in [1, 2, 3], "Only 1D/2D/3D joint available"
-        # it is already a 3D joint, so only do something if dof is not 3
-        if dof != 3:
-            sys = sys.change_joint_type(
-                "seg2", dof_joint_types[dof], new_damp=dof_joint_dampings[dof]
-            )
+    sys = sys.change_joint_type(
+        "seg1", dof_joint_types[dof1], new_damp=dof_joint_dampings[dof2]
+    )
+    sys = sys.change_joint_type(
+        "seg2", dof_joint_types[dof1], new_damp=dof_joint_dampings[dof2]
+    )
 
     ring.RCMG(
         randomize_sys.randomize_anchors(sys, anchors) if anchors else sys,

@@ -12,20 +12,8 @@ class Transform:
         self.use_vqf = use_vqf
 
     def __call__(self, ele):
-        X_d, y_d = ele
 
-        seg1, seg2 = X_d["seg1"], X_d["seg2"]
-        a1, a2 = seg1["acc"], seg2["acc"]
-        g1, g2 = seg1["gyr"], seg2["gyr"]
-        p1, p2 = seg1["imu_to_joint_m"], seg2["imu_to_joint_m"]
-
-        q1 = qmt.randomQuat() if self.rand_ori else np.array([1.0, 0, 0, 0])
-        q2 = qmt.randomQuat() if self.rand_ori else np.array([1.0, 0, 0, 0])
-        a1, g1, p1 = qmt.rotate(q1, a1), qmt.rotate(q1, g1), qmt.rotate(q1, p1)
-        a2, g2, p2 = qmt.rotate(q2, a2), qmt.rotate(q2, g2), qmt.rotate(q2, p2)
-        qrel = y_d["seg2"]
-        qrel = qmt.qmult(q1, qmt.qmult(qrel, qmt.qinv(q2)))
-        del q1, q2
+        a1, a2, g1, g2, p1, p2, qrel, dt = self._unpack(ele, self.rand_ori)
 
         F = 12
         if self.dof is not None:
@@ -34,7 +22,7 @@ class Transform:
             F += 6
         if self.use_vqf:
             F += 12
-        dt = X_d.get("dt", None)
+
         if dt is not None:
             F += 1
 
@@ -65,3 +53,32 @@ class Transform:
             X[:, -1] = dt * 10
 
         return X[:, None], qrel[:, None]
+
+    @staticmethod
+    def _unpack(ele, rand_ori):
+        X_d, y_d = ele
+
+        seg1, seg2 = X_d["seg1"], X_d["seg2"]
+        a1, a2 = seg1["acc"], seg2["acc"]
+        g1, g2 = seg1["gyr"], seg2["gyr"]
+        p1, p2 = seg1["imu_to_joint_m"], seg2["imu_to_joint_m"]
+
+        q1 = qmt.randomQuat() if rand_ori else np.array([1.0, 0, 0, 0])
+        q2 = qmt.randomQuat() if rand_ori else np.array([1.0, 0, 0, 0])
+        a1, g1, p1 = qmt.rotate(q1, a1), qmt.rotate(q1, g1), qmt.rotate(q1, p1)
+        a2, g2, p2 = qmt.rotate(q2, a2), qmt.rotate(q2, g2), qmt.rotate(q2, p2)
+
+        if "floatBase" in y_d:
+            qrel = qmt.qmult(qmt.qinv(y_d["seg1"]), y_d["seg2"])
+        else:
+            qrel = y_d["seg2"]
+        qrel = qmt.qmult(q1, qmt.qmult(qrel, qmt.qinv(q2)))
+        del q1, q2
+
+        if np.random.choice([False, True]):
+            a1, a2 = a2, a1
+            g1, g2 = g2, g1
+            p1, p2 = p2, p1
+            qrel = qmt.qinv(qrel)
+
+        return a1, a2, g1, g2, p1, p2, qrel, X_d.get("dt", None)
