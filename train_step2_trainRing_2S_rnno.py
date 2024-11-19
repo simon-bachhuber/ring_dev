@@ -1,6 +1,8 @@
+from diodem import load_data
 import fire
 import jax.numpy as jnp
 import numpy as np
+import qmt
 import ring
 from ring.utils import dataloader_torch
 from torch.utils.data import ConcatDataset
@@ -12,6 +14,34 @@ from train_support.transform_2S import Transform
 def _params(unique_id: str = ring.ml.unique_id()) -> str:
     home = "/bigwork/nhkbbach/" if ring.ml.on_cluster() else "~/"
     return home + f"params/{unique_id}.pickle"
+
+
+def _diodem_cb(exp_id: int, net, seg1, seg2, motion_start):
+    data = load_data(exp_id, motion_start=motion_start)
+
+    N = data["seg1"]["quat"].shape[0]
+    X = np.zeros((N, 12))
+    X[..., :3] = data[seg1]["imu_rigid"]["acc"] / 9.81
+    X[..., 3:6] = data[seg2]["imu_rigid"]["acc"] / 9.81
+    X[..., 6:9] = data[seg1]["imu_rigid"]["gyr"] / 2.2
+    X[..., 9:] = data[seg2]["imu_rigid"]["gyr"] / 2.2
+    X = X[:, None]
+
+    Y = qmt.qmult(qmt.qinv(data[seg1]["quat"]), data[seg2]["quat"])
+    Y = Y[:, None]
+
+    return ring.ml.callbacks.EvalXyTrainingLoopCallback(
+        net,
+        dict(
+            mae_deg=lambda q, qhat: jnp.rad2deg(
+                jnp.mean(ring.maths.angle_error(q, qhat))
+            )
+        ),
+        X,
+        Y,
+        None,
+        f"real_{exp_id}_{motion_start}_{seg1}_{seg2}",
+    )
 
 
 def main(
@@ -102,6 +132,13 @@ def main(
         if i == 0:
             T = X_val.shape[1]
             # print("T: ", T)
+
+    callbacks.append(_diodem_cb(1, net, "seg1", "seg2", "slow1"))
+    callbacks.append(_diodem_cb(1, net, "seg2", "seg3", "slow1"))
+    callbacks.append(_diodem_cb(1, net, "seg3", "seg4", "slow1"))
+    callbacks.append(_diodem_cb(1, net, "seg1", "seg2", "fast"))
+    callbacks.append(_diodem_cb(1, net, "seg2", "seg3", "fast"))
+    callbacks.append(_diodem_cb(1, net, "seg3", "seg4", "fast"))
 
     n_decay_episodes = episodes if n_decay_episodes is None else n_decay_episodes
     opt = ring.ml.make_optimizer(
