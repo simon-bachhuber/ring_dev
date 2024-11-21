@@ -97,6 +97,7 @@ def main(
     motion_arti: bool = False,
     dof1: int = None,
     dof2: int = None,
+    dyn_sim: bool = False,
 ):
     sys = ring.System.create(sys_str2)
 
@@ -116,7 +117,7 @@ def main(
         add_y_relpose=True,
         add_y_rootfull=True,
         add_y_rootfull_kwargs=dict(child_to_parent=True),
-        dynamic_simulation=True,
+        dynamic_simulation=dyn_sim,
         imu_motion_artifacts=motion_arti,
         imu_motion_artifacts_kwargs=dict(
             prob_rigid=0.25,
