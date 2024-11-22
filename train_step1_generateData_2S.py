@@ -68,12 +68,19 @@ sys_str2 = """
 </x_xy>
 """  # noqa: E501
 
-dof_joint_types = {0: "frozen", 1: "rr", 2: "rsaddle", 3: "spherical"}
+dof_joint_types = {
+    "0": "frozen",
+    "1a": "rr",
+    "1b": "rr_imp",
+    "2": "rsaddle",
+    "3": "spherical",
+}
 dof_joint_dampings = {
-    0: np.array([]),
-    1: np.array([3.0]),
-    2: np.array([3.0, 3.0]),
-    3: np.array([5.0, 5.0, 5.0]),
+    "0": np.array([]),
+    "1a": np.array([3.0]),
+    "1b": np.array([3.0, 3.0]),
+    "2": np.array([3.0, 3.0]),
+    "3": np.array([5.0, 5.0, 5.0]),
 }
 
 
@@ -95,11 +102,12 @@ def main(
     # sampling_rates: list[float] = [40, 60, 80, 100, 120, 140, 160, 180, 200],
     T: float = 60.0,  # 150
     motion_arti: bool = False,
-    dof1: int = None,
-    dof2: int = None,
+    dof1: str = None,
+    dof2: str = None,
     dyn_sim: bool = False,
+    rom: bool = False,
 ):
-    sys = ring.System.create(sys_str2)
+    sys = ring.System.create(sys_str1)
 
     if dof1 is not None:
         sys = sys.change_joint_type(
@@ -110,9 +118,24 @@ def main(
             "seg2", dof_joint_types[dof2], new_damp=dof_joint_dampings[dof2]
         )
 
+    changes = {"T": T}
+    if rom:
+        overwrites = dict(
+            rom_halfsize=0.4,
+            dpos_max=0.1,
+            cor_pos_min=-0.05,
+            cor_pos_max=0.05,
+            cor_dpos_max=0.03,
+            dang_max_free_spherical=0.8,
+            t_max=5.0,
+        )
+        changes.update(
+            {"joint_type_specific_overwrites": dict(cor=overwrites, free=overwrites)}
+        )
+
     ring.RCMG(
         randomize_sys.randomize_anchors(sys, anchors) if anchors else sys,
-        [replace(ring.MotionConfig.from_register(c), T=T) for c in configs],
+        [replace(ring.MotionConfig.from_register(c), **changes) for c in configs],
         add_X_imus=True,
         add_y_relpose=True,
         add_y_rootfull=True,
