@@ -70,6 +70,7 @@ sys_str2 = """
 
 dof_joint_types = {
     "0": "frozen",
+    "1": "rr",
     "1a": "rr",
     "1b": "rr_imp",
     "2": "rsaddle",
@@ -77,6 +78,7 @@ dof_joint_types = {
 }
 dof_joint_dampings = {
     "0": np.array([]),
+    "1": np.array([3.0]),
     "1a": np.array([3.0]),
     "1b": np.array([3.0, 3.0]),
     "2": np.array([3.0, 3.0]),
