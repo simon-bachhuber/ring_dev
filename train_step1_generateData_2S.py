@@ -110,10 +110,12 @@ def main(
     sys = ring.System.create(sys_str1)
 
     if dof1 is not None:
+        dof1 = str(dof1)
         sys = sys.change_joint_type(
             "seg1", dof_joint_types[dof1], new_damp=dof_joint_dampings[dof1]
         )
     if dof2 is not None:
+        dof2 = str(dof2)
         sys = sys.change_joint_type(
             "seg2", dof_joint_types[dof2], new_damp=dof_joint_dampings[dof2]
         )
