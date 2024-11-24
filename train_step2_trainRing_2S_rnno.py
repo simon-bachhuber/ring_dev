@@ -44,6 +44,10 @@ def _diodem_cb(exp_id: int, net, seg1, seg2, motion_start):
     )
 
 
+def _sum_str(digist: str) -> int:
+    return sum(int(char) for char in digist)
+
+
 def main(
     paths: str,
     bs: int,
@@ -82,7 +86,7 @@ def main(
         ConcatDataset(
             [
                 dataloader_torch.FolderOfPickleFilesDataset(
-                    p, transform(i + 1 if dof else None)
+                    p, transform(_sum_str(p.split("_")[0]) if dof else None)
                 )
                 for i, p in enumerate(paths.split(","))
             ]
