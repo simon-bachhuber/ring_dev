@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from diodem import load_data
 import fire
 import jax.numpy as jnp
@@ -48,8 +50,9 @@ def _diodem_cb(exp_id: int, net, seg1, seg2, motion_start, dof: int | None):
     )
 
 
-def _sum_str(digist: str) -> int:
-    return sum(int(char) for char in digist)
+def _dof_from_path_str(path: str) -> int:
+    digits = str(Path(path).name).split("_")[0]
+    return sum(int(char) for char in digits)
 
 
 def main(
@@ -90,7 +93,7 @@ def main(
         ConcatDataset(
             [
                 dataloader_torch.FolderOfPickleFilesDataset(
-                    p, transform(_sum_str(p.split("_")[0]) if dof else None)
+                    p, transform(_dof_from_path_str(p) if dof else None)
                 )
                 for i, p in enumerate(paths.split(","))
             ]
