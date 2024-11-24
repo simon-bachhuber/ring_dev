@@ -94,8 +94,8 @@ def ray_main(
         param_space = {
             "bs": tune.choice([256]),
             "n_decay_episodes": tune.randint(4000, 11000),
-            "rnn_d": tune.choice([2, 3]),
-            "rnn_w": tune.choice([800]),
+            "rnn_d": tune.choice([1, 2, 3]),
+            "rnn_w": tune.choice([600, 800, 1000]),
             "lin_d": tune.choice(
                 [
                     0,
@@ -104,14 +104,14 @@ def ray_main(
             ),
             "lin_w": tune.choice([400, 600]),
             "seed": tune.randint(0, 1000),
-            "lr": tune.loguniform(5e-5, 3e-4),
-            # "celltype": tune.choice(["gru", "lstm"]),
-            "tbp": tune.choice([150, 300, 600]),
+            "lr": tune.loguniform(1e-5, 3e-3),
+            "celltype": tune.choice(["gru", "lstm"]),
+            "tbp": tune.choice([150, 300, 600, 1000]),
             "use_pos": tune.choice([True, False]),
-            "use_vqf": tune.choice([False]),
-            "adap_clip": tune.choice([1.0, None]),
-            "glob_clip": tune.choice([1.0, None]),
-            "layernorm": tune.choice([True]),
+            "use_vqf": tune.choice([True, False]),
+            "adap_clip": tune.choice([0.2, 1.0, None]),
+            "glob_clip": tune.choice([0.2, 1.0, None]),
+            "layernorm": tune.choice([True, False]),
             "dof": tune.choice([False, True]),
             "rand_ori": tune.choice([False, True]),
         }
@@ -129,7 +129,7 @@ def ray_main(
             scheduler=ASHAScheduler(
                 "i_episode",
                 max_t=max_t if ring.ml.on_cluster() else 10,
-                grace_period=100 if ring.ml.on_cluster() else 10,
+                grace_period=50 if ring.ml.on_cluster() else 10,
             ),
             max_concurrent_trials=4,
         ),
