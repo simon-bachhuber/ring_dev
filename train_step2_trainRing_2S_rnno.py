@@ -192,6 +192,7 @@ def main(
         num_workers=num_workers,
         sampler=sampler,
         shuffle=False,
+        drop_last=True,
     )
 
     params = _params(hex(warmstart)) if warmstart else None
