@@ -86,8 +86,13 @@ class Transform:
         g1, g2 = seg1["gyr"], seg2["gyr"]
 
         # -> from body1 to epsilon
-        qEB1 = qmt.qmult(y_d["floatBase"], y_d["seg1"])
-        qEB2 = qmt.qmult(y_d["floatBase"], y_d["seg2"])
+        if "floatBase" in y_d:
+            qEB1 = qmt.qmult(y_d["floatBase"], y_d["seg1"])
+            qEB2 = qmt.qmult(y_d["floatBase"], y_d["seg2"])
+        else:
+            qEB1 = y_d["seg1"]
+            qB1B2 = y_d["seg2"]
+            qEB2 = qmt.qmult(qEB1, qB1B2)
 
         return a1, a2, g1, g2, qEB1, qEB2
 
