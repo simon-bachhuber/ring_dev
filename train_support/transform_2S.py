@@ -1,84 +1,104 @@
+from jpos.jpos import _lpf
 import numpy as np
 import qmt
+import tree
+
+
+class LPF:
+    def __init__(self, hz, cutoff: float | None):
+        self.hz = hz
+        self.cutoff = cutoff
+
+    def __call__(self, x):
+        if self.cutoff is None:
+            return x
+        return _lpf(x, self.hz, self.cutoff)
 
 
 class Transform:
 
-    def __init__(self, dof: int | None, rand_ori: bool, pos: bool, use_vqf: bool):
+    def __init__(self, rand_ori: bool, hz: float, cutoff: float | None):
+        self._rand_ori = rand_ori
+        self.mode = None
+        self.lpf = LPF(hz, cutoff)
+        self.F = None
+
+    def sim(self):
+        self.mode = "sim"
+        self.rand_ori = self._rand_ori
+        self.rand_swap = True
+
+    def diodem(self, cb: bool = False):
+        self.mode = "diodem"
+        if cb:
+            self.rand_ori = False
+            self.rand_swap = False
+        else:
+            self.rand_ori = self._rand_ori
+            self.rand_swap = True
+
+    def setDOF(self, dof: int | None):
         assert dof in [1, 2, 3, None]
-        self.dof = dof
-        self.rand_ori = rand_ori
-        self.pos = pos
-        self.use_vqf = use_vqf
+        self.F = 6 if dof is None else 9
+        self._dof = dof
 
     def __call__(self, ele):
 
-        a1, a2, g1, g2, p1, p2, qrel, dt = self._unpack(ele, self.rand_ori)
+        assert self.mode is not None
+        assert self.F is not None
 
-        F = 12
-        if self.dof is not None:
-            F += 3
-        if self.pos:
-            F += 6
-        if self.use_vqf:
-            F += 12
+        unpack = self._unpack_dio if self.mode == "diodem" else self._unpack_sim
+        a1, a2, g1, g2, q1, q2 = unpack(ele)
 
-        if dt is not None:
-            F += 1
+        q1r = qmt.randomQuat() if self.rand_ori else np.array([1.0, 0, 0, 0])
+        q2r = qmt.randomQuat() if self.rand_ori else np.array([1.0, 0, 0, 0])
+        a1, g1 = qmt.rotate(q1r, a1), qmt.rotate(q1r, g1)
+        a2, g2 = qmt.rotate(q2r, a2), qmt.rotate(q2r, g2)
+        q1, q2 = qmt.qmult(q1, qmt.qinv(q1r)), qmt.qmult(q2, qmt.qinv(q2r))
 
-        X = np.zeros((a1.shape[0], F))
+        if self.rand_swap and np.random.choice([False, True]):
+            a1, a2 = a2, a1
+            g1, g2 = g2, g1
+            q1, q2 = q2, q1
+
+        X = np.zeros((a1.shape[0], 2, self.F))
         grav, pi = 9.81, 2.2
-        X[:, 0:3] = a1 / grav
-        X[:, 3:6] = a2 / grav
-        X[:, 6:9] = g1 / pi
-        X[:, 9:12] = g2 / pi
+        X[:, 0, 0:3] = a1 / grav
+        X[:, 1, 0:3] = a2 / grav
+        X[:, 0, 3:6] = g1 / pi
+        X[:, 1, 3:6] = g2 / pi
 
-        i = 12
-        if self.dof is not None:
-            X[:, i + self.dof - 1] = 1.0
-            i += 3
-        if self.pos:
-            X[:, i : (i + 3)] = p1  # noqa: E203
-            X[:, (i + 3) : (i + 6)] = p2  # noqa: E203
-            i += 6
-        if self.use_vqf:
-            _dt = 0.01 if dt is None else dt
-            q1 = qmt.oriEstVQF(g1, a1, params=dict(Ts=float(_dt)))
-            q2 = qmt.oriEstVQF(g2, a2, params=dict(Ts=float(_dt)))
-            X[:, i : (i + 4)] = q1  # noqa: E203
-            X[:, (i + 4) : (i + 8)] = q2  # noqa: E203
-            X[:, (i + 8) : (i + 12)] = qmt.qmult(qmt.qinv(q1), q2)  # noqa: E203
-            i += 12
-        if dt is not None:
-            X[:, -1] = dt * 10
+        if self.F == 9:
+            X[:, 1, 6 + self._dof - 1] = 1.0
 
-        return X[:, None], qrel[:, None]
+        Y = np.zeros((a1.shape[0], 2, 4))
+        Y[:, 0] = qmt.quatProject(qmt.qinv(q1), [0, 0, 1.0])["resQuat"]
+        Y[:, 1] = qmt.qmult(qmt.qinv(q1), q2)
+
+        return X, Y
 
     @staticmethod
-    def _unpack(ele, rand_ori):
+    def _unpack_sim(ele):
         X_d, y_d = ele
 
         seg1, seg2 = X_d["seg1"], X_d["seg2"]
         a1, a2 = seg1["acc"], seg2["acc"]
         g1, g2 = seg1["gyr"], seg2["gyr"]
-        p1, p2 = seg1["imu_to_joint_m"], seg2["imu_to_joint_m"]
 
-        q1 = qmt.randomQuat() if rand_ori else np.array([1.0, 0, 0, 0])
-        q2 = qmt.randomQuat() if rand_ori else np.array([1.0, 0, 0, 0])
-        a1, g1, p1 = qmt.rotate(q1, a1), qmt.rotate(q1, g1), qmt.rotate(q1, p1)
-        a2, g2, p2 = qmt.rotate(q2, a2), qmt.rotate(q2, g2), qmt.rotate(q2, p2)
+        # -> from body1 to epsilon
+        qEB1 = qmt.qmult(y_d["floatBase"], y_d["seg1"])
+        qEB2 = qmt.qmult(y_d["floatBase"], y_d["seg2"])
 
-        if "floatBase" in y_d:
-            qrel = qmt.qmult(qmt.qinv(y_d["seg1"]), y_d["seg2"])
-        else:
-            qrel = y_d["seg2"]
-        qrel = qmt.qmult(q1, qmt.qmult(qrel, qmt.qinv(q2)))
-        del q1, q2
+        return a1, a2, g1, g2, qEB1, qEB2
 
-        if np.random.choice([False, True]):
-            a1, a2 = a2, a1
-            g1, g2 = g2, g1
-            p1, p2 = p2, p1
-            qrel = qmt.qinv(qrel)
-
-        return a1, a2, g1, g2, p1, p2, qrel, X_d.get("dt", None)
+    def _unpack_dio(self, ele):
+        a1, a2, g1, g2 = tree.map_structure(
+            self.lpf,
+            (
+                ele["seg1"]["acc"],
+                ele["seg2"]["acc"],
+                ele["seg1"]["gyr"],
+                ele["seg2"]["gyr"],
+            ),
+        )
+        return a1, a2, g1, g2, ele["seg1"]["quat"], ele["seg2"]["quat"]

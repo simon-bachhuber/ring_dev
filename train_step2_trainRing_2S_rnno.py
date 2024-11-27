@@ -1,10 +1,11 @@
+import copy
 from pathlib import Path
 
 from diodem import load_data
+from diodem.benchmark import IMTP
 import fire
 import jax.numpy as jnp
 import numpy as np
-import qmt
 import ring
 from ring.utils import dataloader_torch
 from torch.utils.data import ConcatDataset
@@ -21,38 +22,6 @@ def _params(unique_id: str = ring.ml.unique_id()) -> str:
     return home + f"params/{unique_id}.pickle"
 
 
-def _diodem_cb(exp_id: int, net, seg1, seg2, motion_start, dof: int | None):
-    data = load_data(exp_id, motion_start=motion_start)
-
-    N = data["seg1"]["quat"].shape[0]
-    F = 12 if dof is None else 15
-    X = np.zeros((N, F))
-    X[..., :3] = data[seg1]["imu_rigid"]["acc"] / 9.81
-    X[..., 3:6] = data[seg2]["imu_rigid"]["acc"] / 9.81
-    X[..., 6:9] = data[seg1]["imu_rigid"]["gyr"] / 2.2
-    X[..., 9:] = data[seg2]["imu_rigid"]["gyr"] / 2.2
-
-    if dof is not None:
-        X[..., 12 + dof - 1] = 1.0
-    X = X[:, None]
-
-    Y = qmt.qmult(qmt.qinv(data[seg1]["quat"]), data[seg2]["quat"])
-    Y = Y[:, None]
-
-    return ring.ml.callbacks.EvalXyTrainingLoopCallback(
-        net,
-        dict(
-            mae_deg=lambda q, qhat: jnp.rad2deg(
-                jnp.mean(ring.maths.angle_error(q, qhat))
-            )
-        ),
-        X,
-        Y,
-        None,
-        f"real_{exp_id}_{motion_start}_{seg1}_{seg2}",
-    )
-
-
 class TwoSegDiodemDataset(Dataset):
     def __init__(
         self,
@@ -61,67 +30,90 @@ class TwoSegDiodemDataset(Dataset):
         seg2: str,
         motion_start: str,
         transform,
+        dof: bool,
+        # set to -1 to use the entire length
         T: float = 60,
         Ts: float = 0.01,
         T_offset: float = 3.0,
+        motion_stop=-1,
     ):
-        self.N = int(T / Ts)
-        self.T = T
-        self.Ts = Ts
-        self.T_offset = T_offset
         self.seg1 = seg1
         self.seg2 = seg2
         self.exp_id = exp_id
-        data = load_data(exp_id, motion_start, motion_stop=-1, resample_to_hz=1 / Ts)
+        data = load_data(
+            exp_id, motion_start, motion_stop=motion_stop, resample_to_hz=1 / Ts
+        )
         N = data["seg1"]["quat"].shape[0]
+        self.N = int(T / Ts) if T != -1 else (N - 1)
         self.data = {
-            "seg1": {
-                "acc": data[seg1]["imu_rigid"]["acc"],
-                "gyr": data[seg1]["imu_rigid"]["gyr"],
-                "imu_to_joint_m": np.zeros(
-                    (
-                        N,
-                        3,
-                    )
-                ),
-            },
-            "seg2": {
-                "acc": data[seg2]["imu_rigid"]["acc"],
-                "gyr": data[seg2]["imu_rigid"]["gyr"],
-                "imu_to_joint_m": np.zeros(
-                    (
-                        N,
-                        3,
-                    )
-                ),
-                "quat": qmt.qmult(qmt.qinv(data[seg1]["quat"]), data[seg2]["quat"]),
-            },
+            f"seg{i + 1}": {
+                "acc": data[seg]["imu_rigid"]["acc"],
+                "gyr": data[seg]["imu_rigid"]["gyr"],
+                "quat": data[seg]["quat"],
+            }
+            for i, seg in enumerate([seg1, seg2])
         }
         window = int(T_offset / Ts)
         self.ts = list(range(0, N - self.N, window))
+        self._dof = IMTP([seg1, seg2]).dof(exp_id)[seg2] if dof else None
         self.transform = transform
+        self.cb_identifier = f"real_{exp_id}_{motion_start}_{seg1}_{seg2}"
 
     def __getitem__(self, index):
+        data = self._get_ele(index)
+        self.transform.diodem()
+        return self.transform(data)
+
+    def _get_ele(self, index):
         t = self.ts[index]
-        data = tree.map_structure(lambda a: a[t : (t + self.N)].copy(), self.data)
-        y_d = {"seg2": data["seg2"].pop("quat")}
-        return self.transform((data, y_d))
+        data = tree.map_structure(
+            lambda a: a[t : (t + self.N)].copy(), self.data  # noqa: E203
+        )
+        self.transform.setDOF(self._dof)
+        return data
 
     def __len__(self):
         return len(self.ts)
 
+    def to_cb(self, net):
+        if self._dof is not None:
+            print(f"DOF for {self.seg1}-{self.seg2} is: ", self._dof)
+
+        assert len(self) == 1
+        data = self._get_ele(0)
+        self.transform.diodem(cb=True)
+        X, Y = self.transform(data)
+        return ring.ml.callbacks.EvalXyTrainingLoopCallback(
+            net,
+            dict(
+                mae_deg=lambda q, qhat: jnp.rad2deg(
+                    jnp.mean(ring.maths.angle_error(q, qhat)[..., 500:])
+                )
+            ),
+            X,
+            Y,
+            None,
+            self.cb_identifier,
+        )
+
 
 def _dof_from_path_str(path: str) -> int:
     digits = str(Path(path).name).split("_")[0]
-    return sum(int(char) for char in digits)
+    return sum(int(char) for char in digits if char.isdigit())
 
 
-def _build_train_dataset_and_sampler(paths: str, transform, T, Ts, W: float = 1.0):
+def _load_sim_ds_from_path(path: str, transform, dof: bool) -> Dataset:
+    trafo = copy.deepcopy(transform)
+    trafo.sim()
+    trafo.setDOF(_dof_from_path_str(path) if dof else None)
+    return dataloader_torch.FolderOfPickleFilesDataset(path, trafo)
+
+
+def _build_train_dataset_and_sampler(
+    paths: str, transform, dof: bool, T, Ts, W: float = 1.0
+):
     sim_ds = ConcatDataset(
-        [
-            dataloader_torch.FolderOfPickleFilesDataset(p, transform)
-            for p in paths.split(",")
-        ]
+        [_load_sim_ds_from_path(p, transform, dof) for p in paths.split(",")]
     )
 
     chain1 = ["seg1", "seg2", "seg3", "seg4", "seg5"]
@@ -133,7 +125,9 @@ def _build_train_dataset_and_sampler(paths: str, transform, T, Ts, W: float = 1.
         chain = chain1 if exp_id < 6 else chain2
         motion_start = 7 if exp_id == 1 else 1
         for seg1, seg2 in zip(chain, chain[1:]):
-            ds = TwoSegDiodemDataset(exp_id, seg1, seg2, motion_start, transform, T, Ts)
+            ds = TwoSegDiodemDataset(
+                exp_id, seg1, seg2, motion_start, transform, dof, T, Ts
+            )
             real_datasets.append(ds)
     real_ds = ConcatDataset(real_datasets)
 
@@ -160,30 +154,29 @@ def main(
     lr: float = 1e-3,
     num_workers: int = 1,
     warmstart: str = None,
-    lstm: bool = False,
     dof: bool = False,
     rand_ori: bool = False,
     tbp: int = 1000,
-    pos: bool = False,
-    use_vqf: bool = False,
     loggers=[],
     adap_clip=None,
     glob_clip=1.0,
     n_decay_episodes=None,
     W: float = 1.0,
+    lpf_cutoff: float = None,
+    rnno: bool = False,
+    layernorm: bool = True,
+    celltype: str = "gru",
 ):
     np.random.seed(seed)
-
-    assert not dof
 
     if use_wandb:
         unique_id = ring.ml.unique_id()
         wandb.init(project=wandb_project, config=locals(), name=wandb_name)
 
-    transform = Transform(None, rand_ori, pos, use_vqf)
+    transform = Transform(rand_ori, hz=100.0, cutoff=lpf_cutoff)
 
     train_ds, sampler = _build_train_dataset_and_sampler(
-        paths, transform, 60.0, 0.01, W
+        paths, transform, dof, 60.0, 0.01, W
     )
     gen = dataloader_torch.dataset_to_generator(
         train_ds,
@@ -196,25 +189,33 @@ def main(
     )
 
     params = _params(hex(warmstart)) if warmstart else None
-    celltype = "lstm" if lstm else "gru"
 
-    net = ring.ml.RNNO(
-        4,
-        return_quats=True,
-        eval=False,
-        v1=True,
-        rnn_layers=[rnn_w] * rnn_d,
-        linear_layers=[lin_w] * lin_d,
-        act_fn_rnn=lambda X: X,
-        params=params,
-        celltype=celltype,
-        scale_X=False,
-    ).unwrapped  # get ride of GroundTruthWrapper
+    if rnno:
+        kwargs = {
+            "forward_factory": ring.ml.rnno_v1.rnno_v1_forward_factory,
+            "rnn_layers": [rnn_w] * rnn_d,
+            "linear_layers": [lin_w] * lin_d,
+            "act_fn_rnn": lambda X: X,
+            "output_dim": 8,
+        }
+    else:
+        kwargs = {
+            "hidden_state_dim": rnn_w,
+            "stack_rnn_cells": rnn_d,
+            "message_dim": lin_w,
+            "send_message_n_layers": lin_d,
+        }
+
+    net = ring.ml.RING(
+        params=params, celltype=celltype, lam=(-1, 0), layernorm=layernorm, **kwargs
+    )
+    if rnno:
+        net = ring.ml.base.NoGraph_FilterWrapper(net, quat_normalize=True)
 
     callbacks = []
     for i, p in enumerate(paths.split(",")):
         path = p + "_val"
-        ds_val = dataloader_torch.FolderOfPickleFilesDataset(path, transform)
+        ds_val = _load_sim_ds_from_path(path, transform, dof)
         X_val, y_val = dataloader_torch.dataset_to_generator(ds_val, len(ds_val))(None)
         callbacks.append(
             ring.ml.callbacks.EvalXyTrainingLoopCallback(
@@ -234,12 +235,24 @@ def main(
             T = X_val.shape[1]
             # print("T: ", T)
 
-    callbacks.append(_diodem_cb(1, net, "seg1", "seg2", "slow1", 3 if dof else None))
-    callbacks.append(_diodem_cb(1, net, "seg2", "seg3", "slow1", 1 if dof else None))
-    callbacks.append(_diodem_cb(1, net, "seg3", "seg4", "slow1", 1 if dof else None))
-    callbacks.append(_diodem_cb(1, net, "seg1", "seg2", "fast", 3 if dof else None))
-    callbacks.append(_diodem_cb(1, net, "seg2", "seg3", "fast", 1 if dof else None))
-    callbacks.append(_diodem_cb(1, net, "seg3", "seg4", "fast", 1 if dof else None))
+    def append_diodem_eval_callback(seg1, seg2, motion_start) -> None:
+        callbacks.append(
+            TwoSegDiodemDataset(
+                1, seg1, seg2, motion_start, transform, dof, T=-1, motion_stop=None
+            ).to_cb(net)
+        )
+
+    for motion in ["slow1", "fast"]:
+        append_diodem_eval_callback("seg1", "seg2", motion)
+        append_diodem_eval_callback("seg2", "seg3", motion)
+        append_diodem_eval_callback("seg3", "seg4", motion)
+
+    callbacks.append(
+        ring.ml.callbacks.AverageMetricesTLCB(
+            [[cb.metric_identifier, "mae_deg", "link1"] for cb in callbacks[-6:]],
+            "real_mae_deg_link1",
+        )
+    )
 
     n_decay_episodes = episodes if n_decay_episodes is None else n_decay_episodes
     opt = ring.ml.make_optimizer(
