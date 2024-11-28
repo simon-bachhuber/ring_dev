@@ -65,7 +65,7 @@ def ray_main(
         main(
             paths,
             use_wandb=False,
-            num_workers=int(n_cpus_per_job // 2),
+            num_workers=min(int(n_cpus_per_job // 2), 8),
             loggers=[RayLogger()],
             episodes=max_t + 100,
             **config,
@@ -96,7 +96,7 @@ def ray_main(
             "glob_clip": tune.choice([0.2, 1.0, None]),
             "layernorm": tune.choice([True, False]),
             "dof": tune.choice([False, True]),
-            "rand_ori": tune.choice([False, True]),
+            "rand_ori": tune.choice([True]),
             "rnno": tune.choice([False, True]),
             "W": tune.loguniform(0.1, 10),
             "lpf_cutoff": tune.choice([5, 10, 15, None]),

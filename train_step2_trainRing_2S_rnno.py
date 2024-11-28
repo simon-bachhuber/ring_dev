@@ -235,21 +235,24 @@ def main(
             T = X_val.shape[1]
             # print("T: ", T)
 
-    def append_diodem_eval_callback(seg1, seg2, motion_start) -> None:
-        callbacks.append(
-            TwoSegDiodemDataset(
-                1, seg1, seg2, motion_start, transform, dof, T=-1, motion_stop=None
-            ).to_cb(net)
-        )
+    track_metrices = []
+
+    def append_diodem_eval_callback(seg1, seg2, motion_start, track=False) -> None:
+        cb = TwoSegDiodemDataset(
+            1, seg1, seg2, motion_start, transform, dof, T=-1, motion_stop=None
+        ).to_cb(net)
+        callbacks.append(cb)
+        if track:
+            track_metrices.append([cb.metric_identifier, "mae_deg", "link1"])
 
     for motion in ["slow1", "fast"]:
-        append_diodem_eval_callback("seg1", "seg2", motion)
+        append_diodem_eval_callback("seg1", "seg2", motion, track=True)
         append_diodem_eval_callback("seg2", "seg3", motion)
         append_diodem_eval_callback("seg3", "seg4", motion)
 
     callbacks.append(
         ring.ml.callbacks.AverageMetricesTLCB(
-            [[cb.metric_identifier, "mae_deg", "link1"] for cb in callbacks[-6:]],
+            track_metrices,
             "real_mae_deg_link1",
         )
     )
