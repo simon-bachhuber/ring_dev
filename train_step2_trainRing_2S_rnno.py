@@ -166,6 +166,7 @@ def main(
     rnno: bool = False,
     layernorm: bool = True,
     celltype: str = "gru",
+    rel_only: bool = False,
 ):
     np.random.seed(seed)
 
@@ -173,7 +174,7 @@ def main(
         unique_id = ring.ml.unique_id()
         wandb.init(project=wandb_project, config=locals(), name=wandb_name)
 
-    transform = Transform(rand_ori, hz=100.0, cutoff=lpf_cutoff)
+    transform = Transform(rand_ori, hz=100.0, cutoff=lpf_cutoff, rel_only=rel_only)
 
     train_ds, sampler = _build_train_dataset_and_sampler(
         paths, transform, dof, 60.0, 0.01, W

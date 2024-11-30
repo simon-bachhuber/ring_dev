@@ -17,11 +17,12 @@ class LPF:
 
 class Transform:
 
-    def __init__(self, rand_ori: bool, hz: float, cutoff: float | None):
+    def __init__(self, rand_ori: bool, hz: float, cutoff: float | None, rel_only: bool):
         self._rand_ori = rand_ori
         self.mode = None
         self.lpf = LPF(hz, cutoff)
         self.F = None
+        self.rel_only = rel_only
 
     def sim(self):
         self.mode = "sim"
@@ -74,6 +75,9 @@ class Transform:
         Y = np.zeros((a1.shape[0], 2, 4))
         Y[:, 0] = qmt.quatProject(qmt.qinv(q1), [0, 0, 1.0])["resQuat"]
         Y[:, 1] = qmt.qmult(qmt.qinv(q1), q2)
+
+        if self.rel_only:
+            Y[:, 1] = qmt.qmult(Y[:, 1], qmt.qinv(Y[0, 1]))
 
         return X, Y
 
