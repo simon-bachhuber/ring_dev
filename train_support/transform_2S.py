@@ -4,6 +4,14 @@ import qmt
 import tree
 
 
+def rand_quat_like(q, max_deg: float = 180.0):
+    assert q.shape[-1] == 4
+    qrand = qmt.randomQuat(q.shape[:-1])
+    angle, axis = qmt.quatAngle(qrand), qmt.quatAxis(qrand)
+    angle = angle * (max_deg / 180)
+    return qmt.quatFromAngleAxis(angle, axis)
+
+
 class LPF:
     def __init__(self, hz, cutoff: float | None):
         self.hz = hz
@@ -17,12 +25,20 @@ class LPF:
 
 class Transform:
 
-    def __init__(self, rand_ori: bool, hz: float, cutoff: float | None, rel_only: bool):
+    def __init__(
+        self,
+        rand_ori: bool,
+        hz: float,
+        cutoff: float | None,
+        AR: bool,
+        max_deg: float | None,
+    ):
         self._rand_ori = rand_ori
         self.mode = None
         self.lpf = LPF(hz, cutoff)
         self.F = None
-        self.rel_only = rel_only
+        self.AR = AR
+        self.max_deg = max_deg
 
     def sim(self):
         self.mode = "sim"
@@ -40,7 +56,11 @@ class Transform:
 
     def setDOF(self, dof: int | None):
         assert dof in [1, 2, 3, None]
-        self.F = 6 if dof is None else 9
+        self.F = 6
+        if dof is not None:
+            self.F += 3
+        if self.AR:
+            self.F += 4
         self._dof = dof
 
     def __call__(self, ele):
@@ -69,15 +89,22 @@ class Transform:
         X[:, 0, 3:6] = g1 / pi
         X[:, 1, 3:6] = g2 / pi
 
-        if self.F == 9:
+        if self._dof is not None:
             X[:, 1, 6 + self._dof - 1] = 1.0
 
         Y = np.zeros((a1.shape[0], 2, 4))
-        Y[:, 0] = qmt.quatProject(qmt.qinv(q1), [0, 0, 1.0])["resQuat"]
+        # my `maths.quat_project` and `qmt.quatProject` are identical under q -> q^-1
+        # so normally i would do `maths.quat_project(quat_inv(q1))` here but so instead
+        # we do qmt.quatProject(q1)
+        Y[:, 0] = qmt.quatProject(q1, [0, 0, 1.0])["resQuat"]
         Y[:, 1] = qmt.qmult(qmt.qinv(q1), q2)
 
-        if self.rel_only:
-            Y[:, 1] = qmt.qmult(Y[:, 1], qmt.qinv(Y[0, 1]))
+        if self.AR:
+            X[..., -4:] = np.concatenate((Y[0:1], Y[0:-1]))
+            if self.max_deg is not None:
+                X[..., -4:] = qmt.qmult(
+                    rand_quat_like(X[..., -4:], self.max_deg), X[..., -4:]
+                )
 
         return X, Y
 

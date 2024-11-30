@@ -4,6 +4,7 @@ from pathlib import Path
 from diodem import load_data
 from diodem.benchmark import IMTP
 import fire
+import jax
 import jax.numpy as jnp
 import numpy as np
 import ring
@@ -139,6 +140,66 @@ def _build_train_dataset_and_sampler(
     return ds, WeightedRandomSampler(weights, len(ds))
 
 
+def _f_residual(dq, q_tm1):
+    "q_t = dq @ q_tm1"
+    return ring.maths.quat_mul(dq, q_tm1)
+
+
+class AutoRegressive_FilterWrapper(ring.ml.base.AbstractFilterWrapper):
+    def __init__(self, filter, residual: bool, name=None):
+        super().__init__(filter, name)
+        self.residual = residual
+
+    def apply(self, X, params=None, state=None, y=None, lam=None):
+        yhat, state = super().apply(X, params, state, y, lam)
+
+        if self.residual:
+            yhat = _f_residual(yhat, X[..., -4:])
+
+        return yhat, state
+
+
+class AutoRegressiveInference_FilterWrapper(ring.ml.base.AbstractFilterWrapper):
+    def __init__(self, filter, use_q0: bool, residual: bool, name=None):
+        super().__init__(filter, name)
+        self.use_q0 = use_q0
+        self.residual = residual
+
+    def apply(self, X, params=None, state=None, y=None, lam=None):
+        batched = X.ndim == 4
+
+        _, _state = super().init(X=X, lam=lam)
+        assert params is not None
+        if state is None:
+            state = _state
+
+        apply_fn = super().apply
+
+        def timestep(carry, X):
+            q_tm1, state = carry
+            X = jnp.concatenate((X[:, None], q_tm1), axis=-1)
+            q_t, state = apply_fn(X, params, state, y, lam)
+            if self.residual:
+                q_t = _f_residual(q_t, q_tm1)
+            return (q_t, state), q_t[..., 0, :, :]
+
+        if batched:
+            X = X.transpose((1, 0, 2, 3))
+
+        # do not use `X` because it has the `max_deg` random quaternion multipled
+        q0 = y[..., 0:1, :, :]
+        if not self.use_q0:
+            q0 = ring.maths.unit_quats_like(q0)
+
+        init = (q0, state)
+        (_, state), yhat = jax.lax.scan(timestep, init, X[..., :-4])
+
+        if batched:
+            yhat = yhat.transpose((1, 0, 2, 3))
+
+        return yhat, state
+
+
 def main(
     paths: str,
     bs: int,
@@ -166,7 +227,8 @@ def main(
     rnno: bool = False,
     layernorm: bool = True,
     celltype: str = "gru",
-    rel_only: bool = False,
+    residual: bool = False,
+    max_deg: float = None,
 ):
     np.random.seed(seed)
 
@@ -174,7 +236,9 @@ def main(
         unique_id = ring.ml.unique_id()
         wandb.init(project=wandb_project, config=locals(), name=wandb_name)
 
-    transform = Transform(rand_ori, hz=100.0, cutoff=lpf_cutoff, rel_only=rel_only)
+    transform = Transform(
+        rand_ori, hz=100.0, cutoff=lpf_cutoff, AR=True, max_deg=max_deg
+    )
 
     train_ds, sampler = _build_train_dataset_and_sampler(
         paths, transform, dof, 60.0, 0.01, W
@@ -220,7 +284,7 @@ def main(
         X_val, y_val = dataloader_torch.dataset_to_generator(ds_val, len(ds_val))(None)
         callbacks.append(
             ring.ml.callbacks.EvalXyTrainingLoopCallback(
-                net,
+                AutoRegressive_FilterWrapper(net, residual),
                 dict(
                     mae_deg=lambda q, qhat: jnp.rad2deg(
                         jnp.mean(ring.maths.angle_error(q, qhat))
@@ -241,7 +305,9 @@ def main(
     def append_diodem_eval_callback(seg1, seg2, motion_start, track=False) -> None:
         cb = TwoSegDiodemDataset(
             1, seg1, seg2, motion_start, transform, dof, T=-1, motion_stop=None
-        ).to_cb(net)
+        ).to_cb(
+            AutoRegressiveInference_FilterWrapper(net, use_q0=True, residual=residual)
+        )
         callbacks.append(cb)
         if track:
             track_metrices.append([cb.metric_identifier, "mae_deg", "link1"])
@@ -266,7 +332,7 @@ def main(
     ring.ml.train_fn(
         gen,
         episodes,
-        net,
+        AutoRegressive_FilterWrapper(net, residual),
         opt,
         # callback_kill_after_seconds=23.5 * 3600,
         callback_kill_if_nan=True,
