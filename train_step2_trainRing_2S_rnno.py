@@ -229,6 +229,7 @@ def main(
     celltype: str = "gru",
     residual: bool = False,
     max_deg: float = None,
+    AR: bool = False,
 ):
     np.random.seed(seed)
 
@@ -236,9 +237,7 @@ def main(
         unique_id = ring.ml.unique_id()
         wandb.init(project=wandb_project, config=locals(), name=wandb_name)
 
-    transform = Transform(
-        rand_ori, hz=100.0, cutoff=lpf_cutoff, AR=True, max_deg=max_deg
-    )
+    transform = Transform(rand_ori, hz=100.0, cutoff=lpf_cutoff, AR=AR, max_deg=max_deg)
 
     train_ds, sampler = _build_train_dataset_and_sampler(
         paths, transform, dof, 60.0, 0.01, W
@@ -284,7 +283,7 @@ def main(
         X_val, y_val = dataloader_torch.dataset_to_generator(ds_val, len(ds_val))(None)
         callbacks.append(
             ring.ml.callbacks.EvalXyTrainingLoopCallback(
-                AutoRegressive_FilterWrapper(net, residual),
+                AutoRegressive_FilterWrapper(net, residual) if AR else net,
                 dict(
                     mae_deg=lambda q, qhat: jnp.rad2deg(
                         jnp.mean(ring.maths.angle_error(q, qhat))
@@ -307,6 +306,8 @@ def main(
             1, seg1, seg2, motion_start, transform, dof, T=-1, motion_stop=None
         ).to_cb(
             AutoRegressiveInference_FilterWrapper(net, use_q0=True, residual=residual)
+            if AR
+            else net
         )
         callbacks.append(cb)
         if track:
@@ -332,7 +333,7 @@ def main(
     ring.ml.train_fn(
         gen,
         episodes,
-        AutoRegressive_FilterWrapper(net, residual),
+        AutoRegressive_FilterWrapper(net, residual) if AR else net,
         opt,
         # callback_kill_after_seconds=23.5 * 3600,
         callback_kill_if_nan=True,
