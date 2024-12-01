@@ -100,7 +100,7 @@ def ray_main(
             "rnno": tune.choice([False, True]),
             "W": tune.loguniform(0.01, 1),
             "lpf_cutoff": tune.choice([5, 10, 15, None]),
-            "mae_deg": tune.loguniform(0.5, 50),
+            "max_deg": tune.loguniform(0.5, 50),
         }
     else:
         param_space = {"bs": 4, "rnn_w": 20, "lin_w": 10}
