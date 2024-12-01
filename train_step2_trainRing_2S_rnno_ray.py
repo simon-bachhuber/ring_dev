@@ -89,7 +89,7 @@ def ray_main(
             ),
             "lin_w": tune.choice([400, 600]),
             "seed": tune.randint(0, 1000),
-            "lr": tune.loguniform(1e-5, 3e-3),
+            "lr": tune.loguniform(1e-5, 1e-2),
             "celltype": tune.choice(["gru", "lstm"]),
             "tbp": tune.choice([100, 150, 300, 600, 1000]),
             "adap_clip": tune.choice([0.2, 1.0, None]),
@@ -98,8 +98,9 @@ def ray_main(
             "dof": tune.choice([False, True]),
             "rand_ori": tune.choice([True]),
             "rnno": tune.choice([False, True]),
-            "W": tune.loguniform(0.1, 10),
+            "W": tune.loguniform(0.01, 1),
             "lpf_cutoff": tune.choice([5, 10, 15, None]),
+            "mae_deg": tune.loguniform(0.5, 50),
         }
     else:
         param_space = {"bs": 4, "rnn_w": 20, "lin_w": 10}
