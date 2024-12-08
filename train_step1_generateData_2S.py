@@ -1,19 +1,3 @@
-"""
-srun python ring_dev/train_step1_generateData_2S.py 24576 $BIGWORK/data/10 "['standard', 'standard-S', 'standard-S+', 'expSlow', 'expSlow-S', 'expSlow-S+', 'expFast', 'expFast-S', 'expFast-S+', 'hinUndHer', 'hinUndHer-S', 'hinUndHer-S+']" 10 --dof1 1 --dof2 0
-srun python ring_dev/train_step1_generateData_2S.py 24576 $BIGWORK/data/11 "['standard', 'standard-S', 'standard-S+', 'expSlow', 'expSlow-S', 'expSlow-S+', 'expFast', 'expFast-S', 'expFast-S+', 'hinUndHer', 'hinUndHer-S', 'hinUndHer-S+']" 11 --dof1 1 --dof2 1
-srun python ring_dev/train_step1_generateData_2S.py 24576 $BIGWORK/data/12 "['standard', 'standard-S', 'standard-S+', 'expSlow', 'expSlow-S', 'expSlow-S+', 'expFast', 'expFast-S', 'expFast-S+', 'hinUndHer', 'hinUndHer-S', 'hinUndHer-S+']" 12 --dof1 1 --dof2 2
-srun python ring_dev/train_step1_generateData_2S.py 24576 $BIGWORK/data/13 "['standard', 'standard-S', 'standard-S+', 'expSlow', 'expSlow-S', 'expSlow-S+', 'expFast', 'expFast-S', 'expFast-S+', 'hinUndHer', 'hinUndHer-S', 'hinUndHer-S+']" 13 --dof1 1 --dof2 3
-srun python ring_dev/train_step1_generateData_2S.py 24576 $BIGWORK/data/22 "['standard', 'standard-S', 'standard-S+', 'expSlow', 'expSlow-S', 'expSlow-S+', 'expFast', 'expFast-S', 'expFast-S+', 'hinUndHer', 'hinUndHer-S', 'hinUndHer-S+']" 22 --dof1 2 --dof2 2
-srun python ring_dev/train_step1_generateData_2S.py 24576 $BIGWORK/data/23 "['standard', 'standard-S', 'standard-S+', 'expSlow', 'expSlow-S', 'expSlow-S+', 'expFast', 'expFast-S', 'expFast-S+', 'hinUndHer', 'hinUndHer-S', 'hinUndHer-S+']" 23 --dof1 2 --dof2 3
-
-srun python ring_dev/train_step1_generateData_2S.py 96 $BIGWORK/data/10_val "['standard', 'standard-S', 'standard-S+', 'expSlow', 'expSlow-S', 'expSlow-S+', 'expFast', 'expFast-S', 'expFast-S+', 'hinUndHer', 'hinUndHer-S', 'hinUndHer-S+']" 101 --dof1 1 --dof2 0
-srun python ring_dev/train_step1_generateData_2S.py 96 $BIGWORK/data/11_val "['standard', 'standard-S', 'standard-S+', 'expSlow', 'expSlow-S', 'expSlow-S+', 'expFast', 'expFast-S', 'expFast-S+', 'hinUndHer', 'hinUndHer-S', 'hinUndHer-S+']" 111 --dof1 1 --dof2 1
-srun python ring_dev/train_step1_generateData_2S.py 96 $BIGWORK/data/12_val "['standard', 'standard-S', 'standard-S+', 'expSlow', 'expSlow-S', 'expSlow-S+', 'expFast', 'expFast-S', 'expFast-S+', 'hinUndHer', 'hinUndHer-S', 'hinUndHer-S+']" 121 --dof1 1 --dof2 2
-srun python ring_dev/train_step1_generateData_2S.py 96 $BIGWORK/data/13_val "['standard', 'standard-S', 'standard-S+', 'expSlow', 'expSlow-S', 'expSlow-S+', 'expFast', 'expFast-S', 'expFast-S+', 'hinUndHer', 'hinUndHer-S', 'hinUndHer-S+']" 131 --dof1 1 --dof2 3
-srun python ring_dev/train_step1_generateData_2S.py 96 $BIGWORK/data/22_val "['standard', 'standard-S', 'standard-S+', 'expSlow', 'expSlow-S', 'expSlow-S+', 'expFast', 'expFast-S', 'expFast-S+', 'hinUndHer', 'hinUndHer-S', 'hinUndHer-S+']" 221 --dof1 2 --dof2 2
-srun python ring_dev/train_step1_generateData_2S.py 96 $BIGWORK/data/23_val "['standard', 'standard-S', 'standard-S+', 'expSlow', 'expSlow-S', 'expSlow-S+', 'expFast', 'expFast-S', 'expFast-S+', 'hinUndHer', 'hinUndHer-S', 'hinUndHer-S+']" 231 --dof1 2 --dof2 3
-"""
-
 from dataclasses import replace
 from typing import Optional
 
