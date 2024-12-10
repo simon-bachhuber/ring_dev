@@ -70,6 +70,13 @@ dof_joint_dampings = {
 }
 
 
+def _change_joint_type(sys, name: str, dof: int):
+    dof = str(dof)
+    return sys.change_joint_type(
+        name, dof_joint_types[dof], new_damp=dof_joint_dampings[dof]
+    )
+
+
 def finalize_fn(key, q, x, sys: ring.System):
     idx_map = sys.idx_map("l")
     X, y = {
