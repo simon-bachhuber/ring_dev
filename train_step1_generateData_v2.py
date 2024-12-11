@@ -59,7 +59,7 @@ def finalize_fn_factory(sys_pred: ring.System):
 
 def main(
     xml_path: str,
-    size: int,
+    size: int,  # 32 * n_mconfigs * n_gens (= n_anchors * 3**(N-1)) * X
     output_path: str,
     configs: list[str] = ["standard", "expSlow", "expFast", "hinUndHer"],
     seed: int = 1,
@@ -71,7 +71,7 @@ def main(
     sys = ring.System.create(xml_path)
 
     syss = []
-    segs = set(sys.findall_segments()) - set([sys.find_body_to_world(name=True)])
+    segs = [s for s in sys.findall_segments() if s != sys.find_body_to_world(name=True)]
     print(segs)
     for dofs in list(itertools.product(*([[1, 2, 3]] * len(segs)))):
         _sys = sys
