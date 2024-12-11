@@ -3,6 +3,7 @@ import itertools
 from typing import Optional
 
 import fire
+import jax
 import jax.numpy as jnp
 import ring
 from ring.sys_composer.morph_sys import _autodetermine_new_parents
@@ -14,6 +15,30 @@ from ring.utils import randomize_sys
 from train_step1_generateData_2S import _change_joint_type
 
 dof = dict(rr=1, rsaddle=2, spherical=3, rr_imp=1)
+
+
+def body_to_eps_rots(
+    sys: ring.System,
+    x: ring.Transform,
+    sys_x: ring.System,
+) -> dict[str, jax.Array]:
+    # (time, nlinks, 4) -> (nlinks, time, 4)
+    rots = x.rot.transpose((1, 0, 2))
+    l_map = sys_x.idx_map("l")
+    segments = sys.findall_segments()
+
+    y = dict()
+
+    def f(_, __, name: str):
+        if name not in segments:
+            return
+        q_i = rots[l_map[name]]
+        q_i = ring.maths.quat_inv(q_i)
+        y[name] = q_i
+
+    sys.scan(f, "l", sys.link_names)
+
+    return y
 
 
 def _lookup_new_index(structure: Node):
@@ -40,7 +65,8 @@ def finalize_fn_factory(sys_pred: ring.System):
 
         X = {"dt": jnp.array(sys.dt)}
         for seg in segs:
-            i = _lookup_new_index(structures[sys_pred.name_to_idx(seg)])
+            structure = structures[sys_pred.name_to_idx(seg)]
+            i = _lookup_new_index(structure)
             print(f"For `{seg}` and anchor `{anchor}` use link `{sys.idx_to_name(i)}`")
             X = dict_union(
                 X,
@@ -48,11 +74,13 @@ def finalize_fn_factory(sys_pred: ring.System):
                     seg: dict(
                         dof=dof[sys.link_types[i]],
                         joint_params=sys.links[i].joint_params,
+                        parent_changed=jnp.array(structure.parent_changed),
                     )
                 },
             )
 
-        return X, {}
+        y = body_to_eps_rots(sys_pred, x, sys)
+        return X, y
 
     return finalize_fn
 
@@ -84,9 +112,6 @@ def main(
         syss,
         [replace(ring.MotionConfig.from_register(c), T=T) for c in configs],
         add_X_imus=True,
-        add_y_relpose=True,
-        add_y_rootfull=True,
-        add_y_rootfull_kwargs=dict(child_to_parent=True),
         dynamic_simulation=True,
         imu_motion_artifacts=imu_motion_artifacts,
         imu_motion_artifacts_kwargs=dict(
@@ -102,6 +127,7 @@ def main(
         randomize_hz_kwargs=dict(sampling_rates=sampling_rates, add_dt=False),
         cor=True,
         finalize_fn=finalize_fn_factory(sys),
+        sys_ml=sys,
     ).to_folder(output_path, size, seed, overwrite=False)
 
 
