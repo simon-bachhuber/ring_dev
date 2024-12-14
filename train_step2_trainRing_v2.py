@@ -189,6 +189,7 @@ def main(
     exp_cbs: bool = False,
     lr: float = 1e-3,
     tbp: int = 1000,
+    num_workers: int = 8,
 ):
     np.random.seed(seed)
 
@@ -223,7 +224,7 @@ def main(
         batch_size=bs,
         seed=seed,
         drop_last=True,
-        num_workers=8 if ring.ml.on_cluster() else 1,
+        num_workers=num_workers if ring.ml.on_cluster() else 1,
     )
 
     callbacks = _make_exp_callbacks(ringnet, imtp) if exp_cbs else []
