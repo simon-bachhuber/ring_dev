@@ -1,5 +1,4 @@
 from dataclasses import replace
-import os
 import random
 
 from diodem.benchmark import benchmark
@@ -237,7 +236,7 @@ def main(
         batch_size=bs,
         seed=seed,
         drop_last=True,
-        num_workers=os.cpu_count() if ring.ml.on_cluster() else 1,
+        num_workers=None if ring.ml.on_cluster() else 2,
     )
 
     callbacks = _make_exp_callbacks(ringnet, imtp) if exp_cbs else []
