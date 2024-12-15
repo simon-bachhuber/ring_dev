@@ -253,7 +253,6 @@ def main(
         ringnet,
         optimizer=optimizer,
         callbacks=callbacks,
-        callback_kill_after_seconds=23.5 * 3600,
         callback_kill_if_nan=True,
         callback_kill_if_grads_larger=1e32,
         callback_save_params=_params(),
