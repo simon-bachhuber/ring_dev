@@ -29,13 +29,22 @@ link_names = [
     "seg5_4Seg",
 ]
 
-dropout_rates = dict(
+dropout_rates_hard = dict(
     seg4_2Seg=dict(imu=0.0, ja_1d=2 / 3, ja_2d=1 / 2, dof=1 / 2),
     seg4_3Seg=dict(imu=0.5, ja_1d=2 / 3, ja_2d=1 / 2, dof=1 / 2),
     seg5_3Seg=dict(imu=0.0, ja_1d=2 / 3, ja_2d=1 / 2, dof=1 / 2),
     seg3_4Seg=dict(imu=0.5, ja_1d=2 / 3, ja_2d=1 / 2, dof=1 / 2),
     seg4_4Seg=dict(imu=0.5, ja_1d=2 / 3, ja_2d=1 / 2, dof=1 / 2),
     seg5_4Seg=dict(imu=0.0, ja_1d=2 / 3, ja_2d=1 / 2, dof=1 / 2),
+)
+
+dropout_rates_easy = dict(
+    seg4_2Seg=dict(imu=0.0, ja_1d=1 / 3, ja_2d=1 / 3, dof=0.0),
+    seg4_3Seg=dict(imu=1 / 3, ja_1d=1 / 3, ja_2d=1 / 3, dof=0.0),
+    seg5_3Seg=dict(imu=0.0, ja_1d=1 / 3, ja_2d=1 / 3, dof=0.0),
+    seg3_4Seg=dict(imu=1 / 3, ja_1d=1 / 3, ja_2d=1 / 3, dof=0.0),
+    seg4_4Seg=dict(imu=1 / 3, ja_1d=1 / 3, ja_2d=1 / 3, dof=0.0),
+    seg5_4Seg=dict(imu=0.0, ja_1d=1 / 3, ja_2d=1 / 3, dof=0.0),
 )
 
 
@@ -72,10 +81,12 @@ def _loss_fn(q, qhat):
 
 
 class Transform:
-    def __init__(self, imtp: IMTP):
+    def __init__(self, imtp: IMTP, dropout_rates: dict):
         self.imtp = imtp
+        self.dropout_rates = dropout_rates
 
     def __call__(self, lam2_1, lam2_2, lam3, lam4):
+        dropout_rates = self.dropout_rates
         imtp = self.imtp
 
         X1, Y1 = lam2_1
@@ -190,6 +201,7 @@ def main(
     exp_cbs: bool = False,
     lr: float = 1e-3,
     tbp: int = 1000,
+    dropout_rates: str = "hard",
 ):
     np.random.seed(seed)
 
@@ -216,7 +228,9 @@ def main(
             dataloader_torch.FolderOfPickleFilesDataset(p)
             for p in [path_lam2, path_lam2, path_lam3, path_lam4]
         ],
-        Transform(imtp),
+        Transform(
+            imtp, dict(easy=dropout_rates_easy, hard=dropout_rates_hard)[dropout_rates]
+        ),
     )
     generator = dataloader_torch.dataset_to_generator(
         ds_train,
