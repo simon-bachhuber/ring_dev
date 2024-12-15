@@ -194,7 +194,6 @@ def main(
     np.random.seed(seed)
 
     if use_wandb:
-        unique_id = ring.ml.unique_id()
         wandb.init(project=wandb_project, config=locals(), name=wandb_name)
 
     ringnet = _make_ring(lam, warmstart)
