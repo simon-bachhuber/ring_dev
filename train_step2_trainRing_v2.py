@@ -4,6 +4,7 @@ import random
 from diodem.benchmark import benchmark
 from diodem.benchmark import IMTP
 import fire
+import jax
 import jax.numpy as jnp
 import numpy as np
 import qmt
@@ -68,8 +69,7 @@ def _make_ring(lam, warmstart):
     return ringnet
 
 
-def _loss_fn(q, qhat):
-    "(T, N, F) -> Scalar"
+def _loss_fn_ring(q, qhat):
     loss = jnp.array(0.0)
     for i, p in enumerate(lam):
         if p == -1:
@@ -77,6 +77,29 @@ def _loss_fn(q, qhat):
         else:
             loss += jnp.mean(ring.maths.angle_error(q[:, i], qhat[:, i]) ** 2)
     return loss / len(lam)
+
+
+def _loss_fn_rnno(q, qhat):
+    loss = jnp.array(0.0)
+    assert q.shape[1] == 4
+    M = q[0, 0, -1].astype(jnp.int32)
+    q = q[..., :-1]
+
+    loss += jnp.mean(ring.maths.inclination_loss(q[:, 0], qhat[:, 0]) ** 2)
+
+    def body_fn(i, loss):
+        q_i = jax.lax.dynamic_index_in_dim(q, i, axis=1, keepdims=False)
+        qhat_i = jax.lax.dynamic_index_in_dim(qhat, i, axis=1, keepdims=False)
+        loss += jnp.mean(ring.maths.angle_error(q_i, qhat_i) ** 2)
+        return loss
+
+    loss = jax.lax.fori_loop(jnp.array(1), M, body_fn, loss)
+    return loss / M
+
+
+def _loss_fn(q, qhat):
+    "(T, N, F) -> Scalar"
+    return _loss_fn_ring(q, qhat)
 
 
 class Transform:
@@ -87,6 +110,7 @@ class Transform:
     def __call__(self, lam2_1, lam2_2, lam3, lam4):
         dropout_rates = self.dropout_rates
         imtp = self.imtp
+        slices = imtp.getSlices()
 
         X1, Y1 = lam2_1
         X2, Y2 = lam2_2
@@ -111,14 +135,14 @@ class Transform:
         Y1.update(Y4)
 
         T = Y1["seg3_1Seg"].shape[0]
-        X = np.zeros((imtp.F, 10, T))
+        X = np.zeros((imtp.getF(), 10, T))
         Y = np.zeros((10, T, 4))
 
         if imtp.dt:
-            X[imtp.slice("dt"), 0] = dt1 / imtp.scale_dt
-            X[imtp.slice("dt"), 1:3] = dt2 / imtp.scale_dt
-            X[imtp.slice("dt"), 3:6] = dt3 / imtp.scale_dt
-            X[imtp.slice("dt"), 6:] = dt4 / imtp.scale_dt
+            X[slices["dt"], 0] = dt1 / imtp.scale_dt
+            X[slices["dt"], 1:3] = dt2 / imtp.scale_dt
+            X[slices["dt"], 3:6] = dt3 / imtp.scale_dt
+            X[slices["dt"], 6:] = dt4 / imtp.scale_dt
 
         draw = lambda p: 1.0 - np.random.binomial(1, p=p)
 
@@ -126,17 +150,17 @@ class Transform:
             factor = 1.0
             if imtp.sparse and (p != -1):
                 factor = draw(dropout_rates[name]["imu"])
-            X[imtp.slice("acc"), i] = (X1[name]["acc"].T / imtp.scale_acc) * factor
-            X[imtp.slice("gyr"), i] = (X1[name]["gyr"].T / imtp.scale_gyr) * factor
+            X[slices["acc"], i] = (X1[name]["acc"].T / imtp.scale_acc) * factor
+            X[slices["gyr"], i] = (X1[name]["gyr"].T / imtp.scale_gyr) * factor
             if imtp.mag:
-                X[imtp.slice("mag"), i] = (X1[name]["mag"].T / imtp.scale_mag) * factor
+                X[slices["mag"], i] = (X1[name]["mag"].T / imtp.scale_mag) * factor
             if p != -1:
                 if imtp.joint_axes_1d and X1[name]["dof"] == 1:
-                    X[imtp.slice("ja_1d"), i] = X1[name]["joint_params"]["rr"][
+                    X[slices["ja_1d"], i] = X1[name]["joint_params"]["rr"][
                         "joint_axes"
                     ][:, None] * draw(dropout_rates[name]["ja_1d"])
                 if imtp.joint_axes_2d and X1[name]["dof"] == 2:
-                    X[imtp.slice("ja_2d"), i] = X1[name]["joint_params"]["rsaddle"][
+                    X[slices["ja_2d"], i] = X1[name]["joint_params"]["rsaddle"][
                         "joint_axes"
                     ].reshape(6, 1) * draw(dropout_rates[name]["ja_2d"])
                 if imtp.dof:
@@ -144,13 +168,18 @@ class Transform:
                     dof_array[X1[name]["dof"] - 1] = 1.0 * draw(
                         dropout_rates[name]["dof"]
                     )
-                    X[imtp.slice("dof"), i] = dof_array[:, None]
+                    X[slices["dof"], i] = dof_array[:, None]
 
             q_p = np.array([1.0, 0, 0, 0]) if p == -1 else Y1[link_names[p]]
             q_i = Y1[name]
             Y[i] = qmt.qrel(q_p, q_i)
 
         return X.transpose((2, 1, 0)), Y.transpose((1, 0, 2))
+
+    @staticmethod
+    def _rnno_padd(X, Y):
+        "X: (T, Nseg, F), Y: (T, Nseg, 4) -> (T, 4, ...)"
+        pass
 
 
 def _make_exp_callbacks(ringnet, imtp: IMTP):
@@ -209,7 +238,7 @@ def main(
 
     ringnet = _make_ring(lam, warmstart)
     imtp = IMTP(
-        ["seg1"],
+        segments=None,
         sparse=True,
         joint_axes_1d=True,
         joint_axes_1d_field=True,
