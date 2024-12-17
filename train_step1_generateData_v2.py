@@ -5,6 +5,7 @@ from typing import Optional
 import fire
 import jax
 import jax.numpy as jnp
+import numpy as np
 import ring
 from ring.sys_composer.morph_sys import _autodetermine_new_parents
 from ring.sys_composer.morph_sys import identify_system
@@ -12,9 +13,28 @@ from ring.sys_composer.morph_sys import Node
 from ring.utils import dict_union
 from ring.utils import randomize_sys
 
-from train_step1_generateData_2S import _change_joint_type
 
-dof = dict(rr=1, rsaddle=2, spherical=3, rr_imp=1)
+def _change_joint_type(sys: ring.System, name: str, dof: int | str):
+    dof_joint_types = {
+        "0": "frozen",
+        "1": "rr",
+        "1a": "rr",
+        "1b": "rr_imp",
+        "2": "rsaddle",
+        "3": "spherical",
+    }
+    dof_joint_dampings = {
+        "0": np.array([]),
+        "1": np.array([3.0]),
+        "1a": np.array([3.0]),
+        "1b": np.array([3.0, 3.0]),
+        "2": np.array([3.0, 3.0]),
+        "3": np.array([5.0, 5.0, 5.0]),
+    }
+    dof = str(dof)
+    return sys.change_joint_type(
+        name, dof_joint_types[dof], new_damp=dof_joint_dampings[dof], warn=False
+    )
 
 
 def body_to_eps_rots(
@@ -48,10 +68,12 @@ def _lookup_new_index(structure: Node):
     return structure.old_parent_new_indices
 
 
-def finalize_fn_factory(sys_pred: ring.System):
+def finalize_fn_factory(sys_pred: ring.System, verbose=False):
     segs = set(sys_pred.findall_segments()) - set(
         [sys_pred.find_body_to_world(name=True)]
     )
+
+    dof_map = dict(rr=1, rsaddle=2, spherical=3, rr_imp=1)
 
     def finalize_fn(key, q, x, sys: ring.System):
         anchor = sys.find_body_to_world(name=True)
@@ -67,12 +89,15 @@ def finalize_fn_factory(sys_pred: ring.System):
         for seg in segs:
             structure = structures[sys_pred.name_to_idx(seg)]
             i = _lookup_new_index(structure)
-            print(f"For `{seg}` and anchor `{anchor}` use link `{sys.idx_to_name(i)}`")
+            if verbose:
+                print(
+                    f"For `{seg}` and anchor `{anchor}` use link `{sys.idx_to_name(i)}`"
+                )
             X = dict_union(
                 X,
                 {
                     seg: dict(
-                        dof=dof[sys.link_types[i]],
+                        dof=dof_map[sys.link_types[i]],
                         joint_params=sys.links[i].joint_params,
                         parent_changed=jnp.array(structure.parent_changed),
                     )
@@ -96,18 +121,20 @@ def main(
     dyn_sim: bool = False,
     sampling_rates: list[float] = [40, 60, 80, 100, 120, 140, 160, 180, 200],
     T: float = 150.0,
+    skip_gens: int = 0,
 ):
     sys = ring.System.create(xml_path)
 
     syss = []
     segs = [s for s in sys.findall_segments() if s != sys.find_body_to_world(name=True)]
-    print(segs)
     for dofs in list(itertools.product(*([[1, 2, 3]] * len(segs)))):
         _sys = sys
         for seg, dof in zip(segs, dofs):
             _sys = _change_joint_type(_sys, seg, dof)
         syss.extend(randomize_sys.randomize_anchors(_sys, anchors))
-    print(len(syss))
+    N = len(syss)
+    syss = syss[skip_gens:]
+    size = (N - skip_gens) * int(size / N)
 
     if mot_art:
         dyn_sim = True
