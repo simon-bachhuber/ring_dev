@@ -92,7 +92,8 @@ def main(
     configs: list[str] = ["standard", "expSlow", "expFast", "hinUndHer"],
     seed: int = 1,
     anchors: Optional[list[str]] = None,
-    imu_motion_artifacts: bool = True,
+    mot_art: bool = False,
+    dyn_sim: bool = False,
     sampling_rates: list[float] = [40, 60, 80, 100, 120, 140, 160, 180, 200],
     T: float = 150.0,
 ):
@@ -108,12 +109,15 @@ def main(
         syss.extend(randomize_sys.randomize_anchors(_sys, anchors))
     print(len(syss))
 
+    if mot_art:
+        dyn_sim = True
+
     ring.RCMG(
         syss,
         [replace(ring.MotionConfig.from_register(c), T=T) for c in configs],
         add_X_imus=True,
-        dynamic_simulation=True,
-        imu_motion_artifacts=imu_motion_artifacts,
+        dynamic_simulation=dyn_sim,
+        imu_motion_artifacts=mot_art,
         imu_motion_artifacts_kwargs=dict(
             prob_rigid=0.5,
             pos_min_max=0.05,
