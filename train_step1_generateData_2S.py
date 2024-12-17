@@ -70,10 +70,10 @@ dof_joint_dampings = {
 }
 
 
-def _change_joint_type(sys, name: str, dof: int):
+def _change_joint_type(sys: ring.System, name: str, dof: int):
     dof = str(dof)
     return sys.change_joint_type(
-        name, dof_joint_types[dof], new_damp=dof_joint_dampings[dof]
+        name, dof_joint_types[dof], new_damp=dof_joint_dampings[dof], warn=False
     )
 
 
