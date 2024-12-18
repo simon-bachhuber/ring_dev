@@ -419,7 +419,7 @@ def main(
         net_diodem = RNNO_DiodemWrapper(net) if rnno else net
         callbacks.extend(_make_exp_callbacks(net_diodem, imtp))
 
-    n_decay_episodes = 9500
+    n_decay_episodes = int(0.95 * episodes)
     optimizer = ring.ml.make_optimizer(
         lr, n_decay_episodes, int(6000 / tbp), adap_clip=0.5, glob_clip=None
     )
