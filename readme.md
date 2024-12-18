@@ -1,4 +1,13 @@
-# Retraining of `RING`
+# Dependencies
+`pip install imt-ring imt-diodem fire`
+
+# Retraining of `RING` -- Newer Version
+
+1) `python train_step1_generateData_v2.py 65536 ring_data --mot-art --dof-configuration "['111']"`
+
+2) `python train_step2_trainRing_v2.py ring_data 512 4800 --drop-dof 1.0 --lin-d 2 --layernorm --four-seg`
+
+# Retraining of `RING` -- Older Version
 
 After the installation steps, you can use the two files `train_*.py` to
 1) Create training data using `train_step1_generateData.py`. Use `python train_step1_generateData.py --help` for documentation.
