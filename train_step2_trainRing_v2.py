@@ -333,6 +333,46 @@ def main(
     three_seg: bool = False,
     four_seg: bool = False,
 ):
+    """
+    Main function for training and benchmarking RING neural networks on motion datasets.
+
+    Parameters:
+        path_lam4 (str): Path to the dataset containing lam4 sequences.
+        bs (int): Batch size for training.
+        episodes (int): Number of training episodes.
+        use_wandb (bool, optional): Whether to log training progress using Weights & Biases. Defaults to False.
+        wandb_project (str, optional): Name of the Weights & Biases project. Defaults to "RING".
+        wandb_name (str, optional): Optional name for the Weights & Biases run. Defaults to None.
+        warmstart (str, optional): Path to warmstart parameters. Defaults to None.
+        seed (int, optional): Random seed for reproducibility. Defaults to 1.
+        exp_cbs (bool, optional): Whether to include experimental evaluation callbacks. Defaults to False.
+        lr (float, optional): Learning rate for the optimizer. Defaults to 1e-3.
+        tbp (int, optional): Truncated backpropagation length. Defaults to 1000.
+        drop_imu_1d (float, optional): Probability of dropping IMUs of segments that connect to parent via 1D
+            joints during training. Defaults to 0.75.
+        drop_imu_2d (float, optional): Probability of dropping IMUs of segments that connect to parent via 2D
+            joints during training. Defaults to 0.25.
+        drop_imu_3d (float, optional): Probability of dropping IMUs of segments that connect to parent via 3D
+            joints during training. Defaults to 0.1.
+        drop_ja_1d (float, optional): Probability of dropping joint axes information of segments that connect to
+            parent via 1D joint. Defaults to 0.5.
+        drop_ja_2d (float, optional): Probability of dropping 2D joint axes information of segments that connect
+            to parent via 2D joint. Defaults to 0.5.
+        drop_dof (float, optional): Probability of dropping degrees of freedom. Defaults to 0.0.
+        n_val (int, optional): Number of samples to use for validation. Defaults to 256.
+        rnno (bool, optional): Whether to use RNNO or RING. If `True` use RNNO. Defaults to False.
+        rnn_w (int, optional): Width of the RNN layers. Defaults to 400.
+        rnn_d (int, optional): Depth of the RNN layers. Defaults to 2.
+        lin_w (int, optional): Width of the linear layers. Defaults to 200.
+        lin_d (int, optional): Depth of the linear layers. Defaults to 0.
+        layernorm (bool, optional): Whether to use layer normalization. Defaults to False.
+        celltype (str, optional): Type of RNN cell to use (e.g., "gru", "lstm"). Defaults to "gru".
+        three_seg (bool, optional): Whether to train on 1-Seg, 2-Seg, and 3-Seg chains. Defaults to False.
+        four_seg (bool, optional): Whether to train on 1-Seg, 2-Seg, 3-Seg, and 4-Seg chains. Defaults to False.
+
+    Returns:
+        None: Trains the network and optionally logs results to Weights & Biases.
+    """  # noqa: E501
     np.random.seed(seed)
 
     if use_wandb:

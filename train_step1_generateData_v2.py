@@ -1,5 +1,6 @@
 from dataclasses import replace
 import itertools
+from pathlib import Path
 from typing import Optional
 
 import fire
@@ -111,7 +112,6 @@ def finalize_fn_factory(sys_pred: ring.System, verbose=False):
 
 
 def main(
-    xml_path: str,
     size: int,  # 32 * n_mconfigs * n_gens (= n_anchors * 3**(N-1)) * X
     output_path: str,
     configs: list[str] = ["standard", "expSlow", "expFast", "hinUndHer"],
@@ -121,20 +121,47 @@ def main(
     dyn_sim: bool = False,
     sampling_rates: list[float] = [40, 60, 80, 100, 120, 140, 160, 180, 200],
     T: float = 150.0,
-    skip_gens: int = 0,
+    dof_configuration: Optional[list[str]] = None,
 ):
-    sys = ring.System.create(xml_path)
+    """
+    Main function for generating motion sequences with customizable configurations.
+
+    Parameters:
+        size (int): Number of sequences to generate.
+        output_path (str): Path to the folder where the generated sequences will be stored.
+        configs (list[str], optional): List of MotionConfigs to use. Defaults to
+            ["standard", "expSlow", "expFast", "hinUndHer"].
+        seed (int, optional): Randomness seed. Defaults to 1.
+        anchors (Optional[list[str]], optional): Anchors of the four-segment chain. If None,
+            all segments are chosen as anchors. Defaults to None.
+        mot_art (bool, optional): Whether to simulate motion artifacts (nonrigidly attached IMUs). Defaults to False.
+        dyn_sim (bool, optional): Whether to perform a dynamic or only a kinematic forward simulation. Defaults to False.
+        sampling_rates (list[float], optional): Sampling rates to simulate. Defaults to
+            [40, 60, 80, 100, 120, 140, 160, 180, 200].
+        T (float, optional): Maximum trial length in seconds. Higher sampling rates will be truncated
+            to match the length corresponding to the lowest sampling rate (e.g., 40 Hz * 150s = 6000 samples).
+            Defaults to 150.0.
+        dof_configuration (Optional[list[str]], optional): List of DOF (Degrees of Freedom) configurations
+            for the joints in the format ['111', '121', ...]. If None, all combinations of
+            1D, 2D, and 3D joints are considered. Defaults to None.
+
+    Returns:
+        None: This function generates motion sequences and saves them to the specified output path.
+    """  # noqa: E501
+    sys = ring.System.create(Path(__file__).parent.joinpath("train_xmls/lam4.xml"))
 
     syss = []
     segs = [s for s in sys.findall_segments() if s != sys.find_body_to_world(name=True)]
-    for dofs in list(itertools.product(*([[1, 2, 3]] * len(segs)))):
+    if dof_configuration is None:
+        dof_combinations = list(itertools.product(*([[1, 2, 3]] * len(segs))))
+    else:
+        dof_combinations = [tuple((int(s) for s in comb)) for comb in dof_configuration]
+
+    for dofs in dof_combinations:
         _sys = sys
         for seg, dof in zip(segs, dofs):
             _sys = _change_joint_type(_sys, seg, dof)
         syss.extend(randomize_sys.randomize_anchors(_sys, anchors))
-    N = len(syss)
-    syss = syss[skip_gens:]
-    size = (N - skip_gens) * int(size / N)
 
     if mot_art:
         dyn_sim = True
