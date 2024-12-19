@@ -332,6 +332,7 @@ def main(
     celltype: str = "gru",
     three_seg: bool = False,
     four_seg: bool = False,
+    skip_first: bool = False,
 ):
     """
     Main function for training and benchmarking RING neural networks on motion datasets.
@@ -479,6 +480,7 @@ def main(
         tbp=tbp,
         loss_fn=_loss_fn_rnno if rnno else _loss_fn_ring_factory(lam),
         metrices=None,
+        skip_first_tbp_batch=skip_first,
     )
 
 
