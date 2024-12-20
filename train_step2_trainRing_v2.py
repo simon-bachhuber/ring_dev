@@ -34,6 +34,34 @@ def _params(unique_id: str = ring.ml.unique_id()) -> str:
     return home + f"params/{unique_id}.pickle"
 
 
+def _model(unique_id: str = ring.ml.unique_id()) -> str:
+    home = "/bigwork/nhkbbach/" if ring.ml.on_cluster() else "~/"
+    return home + f"params/model_{unique_id}.pickle"
+
+
+class DumpModelCallback(ring.ml.training_loop.TrainingLoopCallback):
+    def __init__(
+        self, path: str, ringnet: ring.ml.ringnet.RING, overwrite: bool = False
+    ):
+        self.path = ring.utils.parse_path(
+            path,
+            extension="pickle",
+            file_exists_ok=overwrite,
+        )
+        self.ringnet = ringnet.unwrapped_deep
+        self.params = None
+
+    def after_training_step(
+        self, i_episode, metrices, params, grads, sample_eval, loggers, opt_state
+    ):
+        self.params = params
+
+    def close(self):
+        if self.params is not None:
+            self.ringnet.params = self.params
+            ring.utils.pickle_save(self.ringnet.nojit(), self.path)
+
+
 def _make_net(lam, warmstart, rnn_w, rnn_d, lin_w, lin_d, layernorm, celltype, rnno):
 
     dry_run = not ring.ml.on_cluster()
@@ -377,6 +405,7 @@ def main(
     np.random.seed(seed)
 
     if use_wandb:
+        unique_id = ring.ml.unique_id()
         wandb.init(project=wandb_project, config=locals(), name=wandb_name)
 
     if four_seg:
@@ -459,6 +488,8 @@ def main(
     if exp_cbs:
         net_diodem = RNNO_DiodemWrapper(net) if rnno else net
         callbacks.extend(_make_exp_callbacks(net_diodem, imtp))
+
+    callbacks.append(DumpModelCallback(_model(), net, overwrite=True))
 
     n_decay_episodes = int(0.95 * episodes)
     optimizer = ring.ml.make_optimizer(
