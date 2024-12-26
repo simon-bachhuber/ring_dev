@@ -79,8 +79,9 @@ def loss_fn(lam: Sequence[int], q: torch.Tensor, qhat: torch.Tensor) -> torch.Te
     permu = list(reversed(range(q.ndim - 1)))
     loss_incl = inclination_error(q, qhat).permute(*permu)
     loss_mae = angle_error(q, qhat).permute(*permu)
+    lam = torch.tensor(lam, device=q.device)
     return torch.where(
-        torch.tensor(lam).reshape(-1, *[1] * len(batch_dims)) == -1, loss_incl, loss_mae
+        lam.reshape(-1, *[1] * len(batch_dims)) == -1, loss_incl, loss_mae
     ).permute(*permu)
 
 
