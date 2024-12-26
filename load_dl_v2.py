@@ -65,7 +65,9 @@ class Transform:
         "seg5_4Seg",
     ]
 
-    def __init__(self, imtp: IMTP, rnno: bool = False, flatten: bool = False):
+    def __init__(
+        self, imtp: IMTP, rnno: bool = False, flatten: bool = False, T: int = 6000
+    ):
         self.imtp = imtp
         self.drop_imu = {
             1: FLAGS.drop_imu_1d,
@@ -79,6 +81,7 @@ class Transform:
         self.three_seg = FLAGS.three_seg
         self.four_seg = FLAGS.four_seg
         self.flatten = flatten
+        self.T = T
 
     def _lamX_from_lam4(self, lam4, rename_to: list[str]):
         N = len(rename_to)
@@ -182,6 +185,10 @@ class Transform:
             X = X.reshape((T, -1))
             Y = Y.reshape((T, -1))
 
+        start = np.random.randint(0, T - self.T + 1)
+        r = slice(start, start + self.T)
+        X, Y = X[r], Y[r]
+
         return X, Y
 
     def _rnno_output_transform(self, _X, _Y):
@@ -220,8 +227,8 @@ def load_imtp() -> IMTP:
         dt=True,
         scale_acc=9.81,
         scale_gyr=2.2,
-        scale_dt=0.1,
-        scale_ja=0.57,
+        scale_dt=0.01,
+        scale_ja=0.3,
     )
 
 
@@ -231,11 +238,11 @@ flags.DEFINE_string(
 )
 
 
-def load_ds_train_ds_val(rnno: bool, flatten: bool):
+def load_ds_train_ds_val(rnno: bool, flatten: bool, T: int = 6000):
 
     ds = MultiDataset(
         [ShuffledDataset(FolderOfFilesDataset(p)) for p in [FLAGS.path_lam4] * 4],
-        Transform(load_imtp(), rnno, flatten),
+        Transform(load_imtp(), rnno, flatten, T),
     )
     ds_train, ds_val = random_split(ds, [len(ds) - FLAGS.n_val, FLAGS.n_val])
     return ds_train, ds_val
