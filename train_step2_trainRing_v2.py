@@ -444,8 +444,8 @@ def main(
         dt=True,
         scale_acc=9.81,
         scale_gyr=2.2,
-        scale_dt=0.1,
-        scale_ja=0.57,
+        scale_dt=0.01,
+        scale_ja=0.33,
     )
     ds = MultiDataset(
         [ShuffledDataset(FolderOfFilesDataset(p)) for p in [path_lam4] * 4],
