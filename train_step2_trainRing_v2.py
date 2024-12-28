@@ -1,4 +1,5 @@
 from dataclasses import replace
+from typing import Optional
 
 from diodem.benchmark import benchmark
 from diodem.benchmark import IMTP
@@ -39,9 +40,21 @@ def _model(unique_id: str = ring.ml.unique_id()) -> str:
     return home + f"params/model_{unique_id}.pickle"
 
 
+def _checkpoints(unique_id: Optional[str] = None) -> str:
+    home = "/bigwork/nhkbbach/" if ring.ml.on_cluster() else "~/"
+    if unique_id is not None:
+        return home + f"ring_checkpoints/{unique_id}.pickle"
+    else:
+        return home + "ring_checkpoints"
+
+
 class DumpModelCallback(ring.ml.training_loop.TrainingLoopCallback):
     def __init__(
-        self, path: str, ringnet: ring.ml.ringnet.RING, overwrite: bool = False
+        self,
+        path: str,
+        ringnet: ring.ml.ringnet.RING,
+        overwrite: bool = False,
+        dump_every: Optional[int] = None,
     ):
         self.path = ring.utils.parse_path(
             path,
@@ -50,16 +63,19 @@ class DumpModelCallback(ring.ml.training_loop.TrainingLoopCallback):
         )
         self.ringnet = ringnet.unwrapped_deep
         self.params = None
+        self.dump_every = dump_every
 
     def after_training_step(
         self, i_episode, metrices, params, grads, sample_eval, loggers, opt_state
     ):
         self.params = params
+        if self.dump_every is not None and ((i_episode % self.dump_every) == 0):
+            self.close()
 
     def close(self):
         if self.params is not None:
             self.ringnet.params = self.params
-            ring.utils.pickle_save(self.ringnet.nojit(), self.path)
+            ring.utils.pickle_save(self.ringnet.nojit(), self.path, overwrite=True)
 
 
 def _make_net(lam, warmstart, rnn_w, rnn_d, lin_w, lin_d, layernorm, celltype, rnno):
@@ -489,7 +505,12 @@ def main(
         net_diodem = RNNO_DiodemWrapper(net) if rnno else net
         callbacks.extend(_make_exp_callbacks(net_diodem, imtp))
 
-    callbacks.append(DumpModelCallback(_model(), net, overwrite=True))
+    callbacks.append(DumpModelCallback(_model(), net, overwrite=True, dump_every=None))
+    callbacks.append(
+        ml.callbacks.CheckpointCallback(
+            checkpoint_every=5, checkpoint_folder=_checkpoints()
+        )
+    )
 
     n_decay_episodes = int(0.95 * episodes)
     optimizer = ring.ml.make_optimizer(
@@ -512,6 +533,7 @@ def main(
         loss_fn=_loss_fn_rnno if rnno else _loss_fn_ring_factory(lam),
         metrices=None,
         skip_first_tbp_batch=skip_first,
+        callback_create_checkpoint=False,
     )
 
 
