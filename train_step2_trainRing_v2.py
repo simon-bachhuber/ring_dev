@@ -6,6 +6,7 @@ from diodem.benchmark import IMTP
 import fire
 import jax.numpy as jnp
 import numpy as np
+import optax
 import qmt
 import ring
 from ring import maths
@@ -377,6 +378,7 @@ def main(
     three_seg: bool = False,
     four_seg: bool = False,
     skip_first: bool = False,
+    grad_accu: int = 1,
 ):
     """
     Main function for training and benchmarking RING neural networks on motion datasets.
@@ -512,9 +514,12 @@ def main(
         )
     )
 
-    n_decay_episodes = int(0.95 * episodes)
-    optimizer = ring.ml.make_optimizer(
-        lr, n_decay_episodes, int(6000 / tbp), adap_clip=0.5, glob_clip=None
+    n_decay_episodes = int((0.95 * episodes) / grad_accu)
+    optimizer = optax.MultiSteps(
+        ring.ml.make_optimizer(
+            lr, n_decay_episodes, int(6000 / tbp), adap_clip=0.5, glob_clip=None
+        ),
+        grad_accu,
     )
 
     ml.train_fn(
