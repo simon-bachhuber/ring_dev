@@ -514,13 +514,35 @@ def main(
         )
     )
 
-    n_decay_episodes = int((0.95 * episodes) / grad_accu)
-    optimizer = optax.MultiSteps(
-        ring.ml.make_optimizer(
-            lr, n_decay_episodes, int(6000 / tbp), adap_clip=0.5, glob_clip=None
-        ),
-        grad_accu,
-    )
+    if warmstart is not None:
+        n_decay_episodes = int(0.85 * episodes)
+        n_warmup_episodes = int(0.15 * episodes)
+        n_steps_per_episode = int(6000 / tbp / grad_accu)
+        optimizer = optax.MultiSteps(
+            optax.lamb(
+                optax.join_schedules(
+                    [
+                        optax.schedules.linear_schedule(
+                            1e-7, lr, n_warmup_episodes * n_steps_per_episode
+                        ),
+                        optax.schedules.cosine_decay_schedule(
+                            lr, n_decay_episodes * n_steps_per_episode
+                        ),
+                    ],
+                    [n_warmup_episodes * n_steps_per_episode],
+                )
+            ),
+            grad_accu,
+        )
+    else:
+        n_decay_episodes = int(0.95 * episodes)
+        n_steps_per_episode = int(6000 / tbp / grad_accu)
+        optimizer = optax.MultiSteps(
+            ring.ml.make_optimizer(
+                lr, n_decay_episodes, n_steps_per_episode, adap_clip=0.5, glob_clip=None
+            ),
+            grad_accu,
+        )
 
     ml.train_fn(
         generator,
