@@ -111,6 +111,21 @@ def finalize_fn_factory(sys_pred: ring.System, verbose=False):
     return finalize_fn
 
 
+def _add_rom(mconfig: ring.MotionConfig) -> ring.MotionConfig:
+    overwrites = dict(
+        rom_halfsize=0.4,
+        dpos_max=0.1,
+        cor_pos_min=-0.05,
+        cor_pos_max=0.05,
+        cor_dpos_max=0.03,
+        dang_max_free_spherical=0.8,
+        t_max=5.0,
+    )
+    return replace(
+        mconfig, joint_type_specific_overwrites=dict(cor=overwrites, free=overwrites)
+    )
+
+
 def main(
     size: int,  # 32 * n_mconfigs * n_gens (= n_anchors * 3**(N-1)) * X
     output_path: str,
@@ -148,7 +163,7 @@ def main(
     Returns:
         None: This function generates motion sequences and saves them to the specified output path.
     """  # noqa: E501
-    sys = ring.System.create(Path(__file__).parent.joinpath("train_xmls/lam4.xml"))
+    sys = ring.System.create(Path(__file__).parent.joinpath("train_xmls/lam4_pm.xml"))
 
     syss = []
     segs = [s for s in sys.findall_segments() if s != sys.find_body_to_world(name=True)]
@@ -166,9 +181,14 @@ def main(
     if mot_art:
         dyn_sim = True
 
+    _replace_rom = lambda mconfig, add: _add_rom(mconfig) if add else mconfig
     ring.RCMG(
         syss,
-        [replace(ring.MotionConfig.from_register(c), T=T) for c in configs],
+        [
+            _replace_rom(replace(ring.MotionConfig.from_register(c), T=T), add)
+            for c in configs
+            for add in [False, True]
+        ],
         add_X_imus=True,
         dynamic_simulation=dyn_sim,
         imu_motion_artifacts=mot_art,
