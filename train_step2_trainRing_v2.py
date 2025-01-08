@@ -79,6 +79,10 @@ class DumpModelCallback(ring.ml.training_loop.TrainingLoopCallback):
             ring.utils.pickle_save(self.ringnet.nojit(), self.path, overwrite=True)
 
 
+def act_fn_rnno(X):
+    return X
+
+
 def _make_net(lam, warmstart, rnn_w, rnn_d, lin_w, lin_d, layernorm, celltype, rnno):
 
     dry_run = not ring.ml.on_cluster()
@@ -93,7 +97,7 @@ def _make_net(lam, warmstart, rnn_w, rnn_d, lin_w, lin_d, layernorm, celltype, r
             "forward_factory": ring.ml.rnno_v1.rnno_v1_forward_factory,
             "rnn_layers": [rnn_w] * rnn_d,
             "linear_layers": [lin_w] * lin_d,
-            "act_fn_rnn": lambda X: X,
+            "act_fn_rnn": act_fn_rnno,
             "output_dim": 16,
         }
     else:
@@ -138,19 +142,6 @@ def _loss_fn_ring_factory(lam):
         return loss / len(lam)
 
     return _loss_fn_ring
-
-
-def _loss_fn_rnno(q, qhat):
-    loss = jnp.array(0.0)
-    assert q.shape[1] == 4
-    M = q[0, 0, -1].astype(jnp.int32)
-    q = q[..., :-1]
-
-    loss += jnp.mean(ring.maths.inclination_loss(q[:, 0], qhat[:, 0]) ** 2)
-    q, qhat = q.transpose((1, 0, 2)), qhat.transpose((1, 0, 2))
-    qhat = jnp.where(jnp.arange(4) < M, qhat, q)
-    loss += jnp.mean(ring.maths.angle_error(q[1:], qhat[1:]) ** 2) * 4 / M
-    return loss
 
 
 class Transform:
@@ -294,7 +285,7 @@ class Transform:
         return X, Y
 
     def _rnno_output_transform(self, _X, _Y):
-        "X: (T, Nseg, F), Y: (T, Nseg, 4) -> (T, 4, 5)"
+        "X: (T, Nseg, F), Y: (T, Nseg, 4) -> (T, 4, 4)"
         starts = [0, 1, 3, 6]
         if self.four_seg:
             Ms = [1, 2, 3, 4]
@@ -304,14 +295,15 @@ class Transform:
             Ms = [1, 2]
         M = np.random.choice(Ms)
 
-        r = slice(starts[M - 1], starts[M - 1] + M)
-
         T = _X.shape[0]
         F = _X.shape[-1]
-        X, Y = np.zeros((T, 4, F)), np.zeros((T, 4, 5))
+        X, Y = np.zeros((T, 4, F)), np.zeros((T, 4, 4))
+
+        r = slice(starts[M - 1], starts[M - 1] + M)
         X[:, :M] = _X[:, r]
-        Y[:, :M, :-1] = _Y[:, r]
-        X[:, :, -1] = M
+        Y[:, :M] = _Y[:, r]
+        Y[:, M:] = np.array([1.0, 0, 0, 0])[None, None]
+
         return X, Y
 
 
@@ -447,6 +439,10 @@ def main(
             "seg4_2Seg",
         ]
 
+    if rnno:
+        lam = (-1, 0, 1, 2)
+        link_names = ["seg1", "seg2", "seg3", "seg4"]
+
     net = _make_net(
         lam, warmstart, rnn_w, rnn_d, lin_w, lin_d, layernorm, celltype, rnno
     )
@@ -489,8 +485,6 @@ def main(
         num_workers=None if ring.ml.on_cluster() else 0,
     )
     X_val, y_val = dataset_to_Xy(ds_val)
-    if rnno:
-        y_val = y_val[..., :-1]
     callbacks = [
         ring.ml.callbacks.EvalXyTrainingLoopCallback(
             net,
@@ -557,7 +551,7 @@ def main(
         seed_network=seed,
         link_names=link_names,
         tbp=tbp,
-        loss_fn=_loss_fn_rnno if rnno else _loss_fn_ring_factory(lam),
+        loss_fn=_loss_fn_ring_factory(lam),
         metrices=None,
         skip_first_tbp_batch=skip_first,
         callback_create_checkpoint=False,
