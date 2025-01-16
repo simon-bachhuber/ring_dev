@@ -203,7 +203,7 @@ class Transform:
         if not self.rand_ori:
             return X, y
 
-        for name in X:
+        for name in y:  # not X because it also has `dt` key
             # let this be from B -> B'
             qrand = qmt.randomQuat()
             X[name]["acc"] = qmt.rotate(qrand, X[name]["acc"])
