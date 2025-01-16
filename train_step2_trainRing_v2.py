@@ -174,6 +174,7 @@ class Transform:
         rnno: bool,
         three_seg: bool,
         four_seg: bool,
+        rand_ori: bool,
     ):
         self.imtp = imtp
         self.drop_imu = {1: drop_imu_1d, 2: drop_imu_2d, 3: drop_imu_3d}
@@ -183,6 +184,7 @@ class Transform:
         self.rnno = rnno
         self.three_seg = three_seg
         self.four_seg = four_seg
+        self.rand_ori = rand_ori
 
     def _lamX_from_lam4(self, lam4, rename_to: list[str]):
         N = len(rename_to)
@@ -195,6 +197,19 @@ class Transform:
         for old_name in self.chain:
             X.pop(old_name)
             y.pop(old_name)
+        return self._maybe_rand_ori(X, y)
+
+    def _maybe_rand_ori(self, X, y):
+        if not self.rand_ori:
+            return X, y
+
+        for name in X:
+            # let this be from B -> B'
+            qrand = qmt.randomQuat()
+            X[name]["acc"] = qmt.rotate(qrand, X[name]["acc"])
+            X[name]["gyr"] = qmt.rotate(qrand, X[name]["gyr"])
+            # Y is B -> E; we need B' -> E
+            y[name] = qmt.qmult(y[name], qmt.qinv(qrand))
         return X, y
 
     def __call__(self, lam41, lam42, lam43, lam44):
@@ -371,6 +386,7 @@ def main(
     four_seg: bool = False,
     skip_first: bool = False,
     grad_accu: int = 1,
+    rand_ori: bool = False,
 ):
     """
     Main function for training and benchmarking RING neural networks on motion datasets.
@@ -413,6 +429,10 @@ def main(
         None: Trains the network and optionally logs results to Weights & Biases.
     """  # noqa: E501
     np.random.seed(seed)
+
+    if rand_ori:
+        assert drop_ja_1d == 1.0
+        assert drop_ja_2d == 1.0
 
     if use_wandb:
         unique_id = ring.ml.unique_id()
@@ -474,6 +494,7 @@ def main(
             rnno,
             three_seg,
             four_seg,
+            rand_ori,
         ),
     )
     ds_train, ds_val = random_split(ds, [len(ds) - n_val, n_val])
