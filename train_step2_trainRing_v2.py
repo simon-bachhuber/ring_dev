@@ -468,7 +468,11 @@ def main(
     )
     imtp = IMTP(
         segments=None,
-        sparse=True,
+        sparse=(
+            False
+            if ((drop_imu_1d == 0) and (drop_imu_2d == 0) and (drop_imu_3d == 0))
+            else True
+        ),
         joint_axes_1d=True,
         joint_axes_1d_field=True,
         joint_axes_2d=True,
