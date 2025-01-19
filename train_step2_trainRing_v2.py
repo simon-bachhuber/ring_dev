@@ -343,7 +343,7 @@ def _make_exp_callbacks(ringnet, imtp: IMTP):
 
     add_callback(["seg3"], 2, "slow_fast_mix")
     add_callback(["seg1", "seg2"], 1, "slow1")
-    add_callback(["seg3", "seg4"], 1, "slow1")
+    add_callback(["seg3", "seg4"], 1, "fast")
     add_callback(["seg1", "seg2"], 6, "slow1")
     add_callback(["seg2", "seg3"], 6, "fast")
     add_callback(["seg3", "seg4", "seg5"], 1, "slow1")
