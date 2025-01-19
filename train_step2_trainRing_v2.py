@@ -342,6 +342,8 @@ def _make_exp_callbacks(ringnet, imtp: IMTP):
             metrices_name.append([cb.metric_identifier, "mae_deg", segment])
 
     add_callback(["seg3"], 2, "slow_fast_mix")
+    add_callback(["seg1", "seg2"], 1, "slow1")
+    add_callback(["seg3", "seg4"], 1, "slow1")
     add_callback(["seg1", "seg2"], 6, "slow1")
     add_callback(["seg2", "seg3"], 6, "fast")
     add_callback(["seg3", "seg4", "seg5"], 1, "slow1")
@@ -473,10 +475,10 @@ def main(
             if ((drop_imu_1d == 0) and (drop_imu_2d == 0) and (drop_imu_3d == 0))
             else True
         ),
-        joint_axes_1d=True,
-        joint_axes_1d_field=True,
-        joint_axes_2d=True,
-        joint_axes_2d_field=True,
+        joint_axes_1d=False if drop_ja_1d == 1 else True,
+        joint_axes_1d_field=False if drop_ja_1d == 1 else True,
+        joint_axes_2d=False if drop_ja_2d == 1 else True,
+        joint_axes_2d_field=False if drop_ja_2d == 1 else True,
         dof=True,
         dof_field=True,
         dt=True,
