@@ -389,6 +389,9 @@ def main(
     skip_first: bool = False,
     grad_accu: int = 1,
     rand_ori: bool = False,
+    disable_dump_model=False,
+    disable_checkpoint_model=False,
+    disable_save_params=False,
 ):
     """
     Main function for training and benchmarking RING neural networks on motion datasets.
@@ -528,12 +531,16 @@ def main(
         net_diodem = RNNO_DiodemWrapper(net) if rnno else net
         callbacks.extend(_make_exp_callbacks(net_diodem, imtp))
 
-    callbacks.append(DumpModelCallback(_model(), net, overwrite=True, dump_every=None))
-    callbacks.append(
-        ml.callbacks.CheckpointCallback(
-            checkpoint_every=5, checkpoint_folder=_checkpoints()
+    if not disable_dump_model:
+        callbacks.append(
+            DumpModelCallback(_model(), net, overwrite=True, dump_every=None)
         )
-    )
+    if not disable_checkpoint_model:
+        callbacks.append(
+            ml.callbacks.CheckpointCallback(
+                checkpoint_every=5, checkpoint_folder=_checkpoints()
+            )
+        )
 
     if warmstart is not None:
         n_decay_episodes = int(0.85 * episodes)
@@ -573,8 +580,10 @@ def main(
         callbacks=callbacks,
         callback_kill_if_nan=True,
         callback_kill_if_grads_larger=1e32,
-        callback_save_params=_params(),
-        callback_save_params_track_metrices=[["exp_val_mae_deg"]] if exp_cbs else None,
+        callback_save_params=False if disable_save_params else _params(),
+        callback_save_params_track_metrices=(
+            [["exp_val_mae_deg"]] if (exp_cbs and not disable_save_params) else None
+        ),
         seed_network=seed,
         link_names=link_names,
         tbp=tbp,
