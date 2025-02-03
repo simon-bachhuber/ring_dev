@@ -1,5 +1,15 @@
 # Dependencies
-`pip install imt-ring imt-diodem fire`
+1) `pip install -U "jax[cuda12]"`
+
+2) `pip install imt-ring imt-diodem fire`
+
+3) `pip install torch --index-url https://download.pytorch.org/whl/cpu`
+
+### Bug: `scipy.sparse` throws `CircularImportError`
+
+1) `pip uninstall scipy` 
+
+2) `conda install scipy`
 
 # Retraining of `RING` -- Newer Version
 

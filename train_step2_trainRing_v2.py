@@ -1,5 +1,6 @@
 from dataclasses import replace
 from typing import Optional
+import warnings
 
 from diodem.benchmark import benchmark
 from diodem.benchmark import IMTP
@@ -429,6 +430,10 @@ def main(
         celltype (str, optional): Type of RNN cell to use (e.g., "gru", "lstm"). Defaults to "gru".
         three_seg (bool, optional): Whether to train on 1-Seg, 2-Seg, and 3-Seg chains. Defaults to False.
         four_seg (bool, optional): Whether to train on 1-Seg, 2-Seg, 3-Seg, and 4-Seg chains. Defaults to False.
+        skip_first (bool, optional): If `True` skips the first TBPTT minibatch, so the one from (t=0, `tbp`). Defaults to False.
+        grad_accu (int, optional): Number of batches per gradient step to accumulate. Defaults to 1.
+        rand_ori (bool, optional): If `True` randomly rotate IMU measurements. Defaults to False.
+        disable_dump_model (bool, optional): If `True` does not pickle and dump the entire model after training.
 
     Returns:
         None: Trains the network and optionally logs results to Weights & Biases.
@@ -436,8 +441,11 @@ def main(
     np.random.seed(seed)
 
     if rand_ori:
-        assert drop_ja_1d == 1.0
-        assert drop_ja_2d == 1.0
+        warnings.warn(
+            "Currently, the way random IMU orientation is implemented (`rand_ori`"
+            "=True) is by rotating the `acc` and `gyr` measurements. This means that"
+            "joint axes information is not correctly rotated also."
+        )
 
     if use_wandb:
         unique_id = ring.ml.unique_id()
@@ -503,7 +511,7 @@ def main(
             rnno,
             three_seg,
             four_seg,
-            rand_ori,
+            rand_ori=False,
         ),
     )
     ds_train, ds_val = random_split(ds, [len(ds) - n_val, n_val])
