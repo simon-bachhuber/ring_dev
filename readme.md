@@ -15,7 +15,7 @@
 
 1) `python train_step1_generateData_v2.py 65536 ring_data --mot-art --dof-configuration "['111']"`
 
-2) `python train_step2_trainRing_v2.py ring_data 512 4800 --drop-dof 1.0 --lin-d 2 --layernorm --four-seg`
+2) `python train_step2_trainRing_v2.py ring_data 512 4800 --drop-dof 1.0 --lin-d 2 --layernorm --four-seg --drop-ja-2d 1.0`
 
 # Retraining of `RING` -- Older Version
 
