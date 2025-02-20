@@ -137,6 +137,7 @@ def main(
     sampling_rates: list[float] = [40, 60, 80, 100, 120, 140, 160, 180, 200],
     T: float = 150.0,
     dof_configuration: Optional[list[str]] = None,
+    embc_rom_limitation: bool = False,
 ):
     """
     Main function for generating motion sequences with customizable configurations.
@@ -159,6 +160,9 @@ def main(
         dof_configuration (Optional[list[str]], optional): List of DOF (Degrees of Freedom) configurations
             for the joints in the format ['111', '121', ...]. If None, all combinations of
             1D, 2D, and 3D joints are considered. Defaults to None.
+        embc_rom_limitation (bool, optional): If enabled then for each `MotionConfig` adds a second `MotionConfig` object
+            where the global rotation is limited to stay within [-20°, 20°] from the initial random global orientation of
+            the kinematic chain.
 
     Returns:
         None: This function generates motion sequences and saves them to the specified output path.
@@ -181,14 +185,14 @@ def main(
     if mot_art:
         dyn_sim = True
 
-    _replace_rom = lambda mconfig, add: _add_rom(mconfig) if add else mconfig
+    configs = [replace(ring.MotionConfig.from_register(c), T=T) for c in configs]
+    if embc_rom_limitation:
+        _replace_rom = lambda mconfig, add: _add_rom(mconfig) if add else mconfig
+        configs = [_replace_rom(c, add) for c in configs for add in [False, True]]
+
     ring.RCMG(
         syss,
-        [
-            _replace_rom(replace(ring.MotionConfig.from_register(c), T=T), add)
-            for c in configs
-            for add in [False, True]
-        ],
+        configs,
         add_X_imus=True,
         dynamic_simulation=dyn_sim,
         imu_motion_artifacts=mot_art,
