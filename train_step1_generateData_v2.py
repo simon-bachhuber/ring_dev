@@ -136,7 +136,7 @@ def main(
     dyn_sim: bool = False,
     sampling_rates: list[float] = [40, 60, 80, 100, 120, 140, 160, 180, 200],
     T: float = 150.0,
-    dof_configuration: Optional[list[str]] = None,
+    dof_configuration: Optional[list[str]] = ["111"],
     embc_rom_limitation: bool = False,
 ):
     """
@@ -159,7 +159,7 @@ def main(
             Defaults to 150.0.
         dof_configuration (Optional[list[str]], optional): List of DOF (Degrees of Freedom) configurations
             for the joints in the format ['111', '121', ...]. If None, all combinations of
-            1D, 2D, and 3D joints are considered. Defaults to None.
+            1D, 2D, and 3D joints are considered. Defaults to ['111'].
         embc_rom_limitation (bool, optional): If enabled then for each `MotionConfig` adds a second `MotionConfig` object
             where the global rotation is limited to stay within [-20°, 20°] from the initial random global orientation of
             the kinematic chain.
