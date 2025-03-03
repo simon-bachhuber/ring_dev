@@ -18,7 +18,7 @@ module load Miniforge3
 conda activate ring
 
 # STEP 1: Generate data
-srun python ring_dev/train_step1_generateData_v2.py 82944 $BIGWORK/data/v2_lam4_kin_rigid_rom_pm
+srun python ring_dev/train_step1_generateData_v2.py ...
 
 # STEP 2: Training Network
-srun python ring_dev/train_step2_trainRing_v2.py $BIGWORK/data/v2_lam4_kin_rigid_rom_pm 256 10000 --use-wandb --wandb-name "RING-Massive-nonSparse" --exp-cbs --lr 3e-4 --tbp 150 --rnn-w 800 --rnn-d 8 --lin-w 200 --lin-d 0 --n-val 256 --seed 58 --drop-dof 0.5 --drop-ja-1d 1 --drop-ja-2d 1 --rand-ori --drop-imu-1d 0.0 --drop-imu-2d 0.0 --drop-imu-3d 0.0 --celltype "gru"
+srun python ring_dev/train_step2_trainRing_v2.py ...

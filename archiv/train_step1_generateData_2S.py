@@ -52,30 +52,6 @@ sys_str2 = """
 </x_xy>
 """  # noqa: E501
 
-dof_joint_types = {
-    "0": "frozen",
-    "1": "rr",
-    "1a": "rr",
-    "1b": "rr_imp",
-    "2": "rsaddle",
-    "3": "spherical",
-}
-dof_joint_dampings = {
-    "0": np.array([]),
-    "1": np.array([3.0]),
-    "1a": np.array([3.0]),
-    "1b": np.array([3.0, 3.0]),
-    "2": np.array([3.0, 3.0]),
-    "3": np.array([5.0, 5.0, 5.0]),
-}
-
-
-def _change_joint_type(sys: ring.System, name: str, dof: int):
-    dof = str(dof)
-    return sys.change_joint_type(
-        name, dof_joint_types[dof], new_damp=dof_joint_dampings[dof], warn=False
-    )
-
 
 def finalize_fn(key, q, x, sys: ring.System):
     idx_map = sys.idx_map("l")
@@ -92,7 +68,7 @@ def main(
     configs: list[str] = ["standard", "expSlow", "expFast", "hinUndHer"],
     seed: int = 1,
     anchors: Optional[list[str]] = None,
-    # sampling_rates: list[float] = [40, 60, 80, 100, 120, 140, 160, 180, 200],
+    sampling_rates: list[float] = [40, 60, 80, 100, 120, 140, 160, 180, 200],
     T: float = 60.0,  # 150
     motion_arti: bool = False,
     dof1: str = None,
@@ -115,15 +91,7 @@ def main(
 
     changes = {"T": T}
     if rom:
-        overwrites = dict(
-            rom_halfsize=0.4,
-            dpos_max=0.1,
-            cor_pos_min=-0.05,
-            cor_pos_max=0.05,
-            cor_dpos_max=0.03,
-            dang_max_free_spherical=0.8,
-            t_max=5.0,
-        )
+
         changes.update(
             {"joint_type_specific_overwrites": dict(cor=overwrites, free=overwrites)}
         )
@@ -138,7 +106,7 @@ def main(
         dynamic_simulation=dyn_sim,
         imu_motion_artifacts=motion_arti,
         imu_motion_artifacts_kwargs=dict(
-            prob_rigid=0.25,
+            prob_rigid=0.5,
             pos_min_max=0.05,
             all_imus_either_rigid_or_flex=True,
             disable_warning=True,
@@ -146,8 +114,8 @@ def main(
         randomize_joint_params=True,
         randomize_motion_artifacts=True,
         randomize_positions=True,
-        # randomize_hz=True,
-        # randomize_hz_kwargs=dict(sampling_rates=sampling_rates),
+        randomize_hz=True,
+        randomize_hz_kwargs=dict(sampling_rates=sampling_rates),
         cor=True,
         finalize_fn=finalize_fn,
     ).to_folder(output_path, size, seed, overwrite=False)

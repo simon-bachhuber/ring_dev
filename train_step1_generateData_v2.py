@@ -1,6 +1,5 @@
 from dataclasses import replace
 import itertools
-from pathlib import Path
 from typing import Optional
 
 import fire
@@ -13,6 +12,54 @@ from ring.sys_composer.morph_sys import identify_system
 from ring.sys_composer.morph_sys import Node
 from ring.utils import dict_union
 from ring.utils import randomize_sys
+
+sys_str = """
+<x_xy model="lam4">
+  <options dt="0.01" gravity="0.0 0.0 9.81"/>
+  <worldbody>
+    <body joint="free" name="seg2_4Seg" pos="0.2 0.0 0.0" pos_min="0.15 -0.05 -0.05" pos_max="0.35 0.05 0.05" damping="5.0 5.0 5.0 25.0 25.0 25.0">
+      <geom pos="0.1 0.0 0.0" mass="1.0" color="dustin_exp_white" edge_color="black" type="box" dim="0.2 0.05 0.05"/>
+      <geom pos="0.03 -0.05 0.0" mass="0.1" color="dustin_exp_white" edge_color="black" type="box" dim="0.01 0.1 0.01"/>
+      <geom pos="0.17 -0.05 0.0" mass="0.1" color="dustin_exp_white" edge_color="black" type="box" dim="0.01 0.1 0.01"/>
+      <omc pos="0.0 0.0 -0.02" name="seg2" pos_marker="2"/>
+      <body joint="frozen" name="imu2_4Seg" pos="0.10000001 0.0 0.035" pos_min="0.049999997 -0.05 -0.05" pos_max="0.15000002 0.05 0.05">
+        <geom mass="0.1" color="dustin_exp_orange" edge_color="black" type="box" dim="0.05 0.03 0.02"/>
+        <omc pos="0.1 0.0 0.015" name="seg2" pos_marker="2"/>
+      </body>
+      <body joint="rr_imp" name="seg3_4Seg" pos="0.2 0.0 0.0" pos_min="0.0 -0.05 -0.05" pos_max="0.35000002 0.05 0.05" damping="3.0 3.0">
+        <geom pos="0.1 0.0 0.0" mass="1.0" color="dustin_exp_blue" edge_color="black" type="box" dim="0.2 0.05 0.05"/>
+        <geom pos="0.05 0.05 0.0" mass="0.1" color="black" edge_color="black" type="box" dim="0.01 0.1 0.01"/>
+        <geom pos="0.15 -0.05 0.0" mass="0.1" color="black" edge_color="black" type="box" dim="0.01 0.1 0.01"/>
+        <omc pos="0.0 0.0 -0.02" name="seg3" pos_marker="1"/>
+        <body joint="frozen" name="imu3_4Seg" pos="0.099999994 0.0 0.035" pos_min="0.050000012 -0.05 -0.05" pos_max="0.15 0.05 0.05">
+          <geom mass="0.1" color="dustin_exp_orange" edge_color="black" type="box" dim="0.05 0.03 0.02"/>
+          <omc pos="0.1 0.0 0.015" name="seg3" pos_marker="1"/>
+        </body>
+        <body joint="rr_imp" name="seg4_4Seg" pos="0.20000002 0.0 0.0" pos_min="0.0 -0.05 -0.05" pos_max="0.35 0.05 0.05" damping="3.0 3.0">
+          <geom pos="0.1 0.0 0.0" mass="1.0" color="dustin_exp_white" edge_color="black" type="box" dim="0.2 0.05 0.05"/>
+          <geom pos="0.1 0.05 0.0" mass="0.1" color="black" edge_color="black" type="box" dim="0.01 0.1 0.01"/>
+          <geom pos="0.15 -0.05 0.0" mass="0.1" color="black" edge_color="black" type="box" dim="0.01 0.1 0.01"/>
+          <omc pos="0.0 0.0 -0.02" name="seg4" pos_marker="2"/>
+          <body joint="frozen" name="imu4_4Seg" pos="0.100000024 0.0 0.035" pos_min="0.050000012 -0.05 -0.05" pos_max="0.14999998 0.05 0.05">
+            <geom mass="0.1" color="dustin_exp_orange" edge_color="black" type="box" dim="0.05 0.03 0.02"/>
+            <omc pos="0.1 0.0 0.015" name="seg4" pos_marker="2"/>
+          </body>
+          <body joint="rr_imp" name="seg5_4Seg" pos="0.19999999 0.0 0.0" pos_min="0.0 -0.05 -0.05" pos_max="0.35000002 0.05 0.05" damping="3.0 3.0">
+            <geom pos="0.1 0.0 0.0" mass="1.0" color="dustin_exp_white" edge_color="black" type="box" dim="0.2 0.05 0.05"/>
+            <geom pos="0.03 -0.05 0.0" mass="0.1" color="black" edge_color="black" type="box" dim="0.01 0.1 0.01"/>
+            <geom pos="0.17 -0.05 0.0" mass="0.1" color="black" edge_color="black" type="box" dim="0.01 0.1 0.01"/>
+            <omc pos="0.0 0.0 -0.02" name="seg5" pos_marker="4"/>
+            <body joint="frozen" name="imu5_4Seg" pos="0.100000024 0.0 0.035" pos_min="0.050000012 -0.05 -0.05" pos_max="0.15000004 0.05 0.05">
+              <geom mass="0.1" color="dustin_exp_orange" edge_color="black" type="box" dim="0.05 0.03 0.02"/>
+              <omc pos="0.1 0.0 0.015" name="seg5" pos_marker="4"/>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+</x_xy>
+"""  # noqa: E501
 
 
 def _change_joint_type(sys: ring.System, name: str, dof: int | str):
@@ -167,7 +214,7 @@ def main(
     Returns:
         None: This function generates motion sequences and saves them to the specified output path.
     """  # noqa: E501
-    sys = ring.System.create(Path(__file__).parent.joinpath("train_xmls/lam4_pm.xml"))
+    sys = ring.System.create(sys_str)
 
     syss = []
     segs = [s for s in sys.findall_segments() if s != sys.find_body_to_world(name=True)]
