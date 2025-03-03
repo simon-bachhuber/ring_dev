@@ -168,7 +168,9 @@ class Transform:
 def _cb_metrices_factory(delay: int):
     return dict(
         mae_deg=lambda q, qhat: jnp.rad2deg(
-            jnp.mean(maths.angle_error(q[:, :-delay], qhat[:, delay:]))
+            jnp.mean(
+                maths.angle_error(q[:, :-delay] if delay > 0 else q, qhat[:, delay:])
+            )
         ),
     )
 

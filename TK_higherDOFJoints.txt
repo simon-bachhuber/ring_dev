@@ -1,0 +1,6 @@
+First, generate data with higher DOF joints:
+$ python train_step1_generateData_v2.py 34560 $BIGWORK/data --mot-art --dof-configuration "['111', '112', '121', '211']"
+Note that this by default uses all possible four anchors (in the four segment KC), it uses multiple sampling rates going from 40Hz to 200Hz in 20Hz steps, and it simulates T=150s which results at an array shape of (6000,) since the lowest frequency is 40Hz (40*150=6000)
+
+Second, train the RING network.
+$ python TK_delay.py data/test 512 5000 --tbp 150 --drop-imu-1d 0.75 --drop-imu-2d 0 --drop-ja-1d 1 --drop-ja-2d 1 --drop-dof 1 --lr 3e-4 --layernorm --exp-cbs --use-wandb 
