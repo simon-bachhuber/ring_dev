@@ -1,8 +1,8 @@
 from dataclasses import replace
 import os
 
-from diodem.benchmark import benchmark
-from diodem.benchmark import IMTP
+from benchmark import benchmark as benchmark_fn
+from benchmark import IMTP
 import fire
 import jax.numpy as jnp
 import numpy as np
@@ -10,11 +10,11 @@ import qmt
 import ring
 from ring import maths
 from ring import ml
-from ring.utils.dataloader_torch import dataset_to_generator
-from ring.utils.dataloader_torch import dataset_to_Xy
-from ring.utils.dataloader_torch import FolderOfFilesDataset
-from ring.utils.dataloader_torch import MultiDataset
-from ring.utils.dataloader_torch import ShuffledDataset
+from ring.extras.dataloader_torch import dataset_to_generator
+from ring.extras.dataloader_torch import dataset_to_Xy
+from ring.extras.dataloader_torch import FolderOfFilesDataset
+from ring.extras.dataloader_torch import MultiDataset
+from ring.extras.dataloader_torch import ShuffledDataset
 from torch.utils.data import random_split
 import wandb
 
@@ -180,7 +180,7 @@ def _make_exp_callbacks(ringnet, imtp: IMTP, delay: int):
     callbacks, metrices_name = [], []
 
     def add_callback(segments: list[str], exp_id, motion_start):
-        cb = benchmark(
+        cb = benchmark_fn(
             imtp=replace(imtp, segments=segments),
             exp_id=exp_id,
             motion_start=motion_start,

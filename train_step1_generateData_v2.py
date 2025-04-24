@@ -7,11 +7,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import ring
+from ring.extras.randomize_sys import randomize_anchors
 from ring.sys_composer.morph_sys import _autodetermine_new_parents
 from ring.sys_composer.morph_sys import identify_system
 from ring.sys_composer.morph_sys import Node
 from ring.utils import dict_union
-from ring.utils import randomize_sys
 
 sys_str = """
 <x_xy model="lam4">
@@ -185,6 +185,8 @@ def main(
     T: float = 150.0,
     dof_configuration: Optional[list[str]] = ["111"],
     embc_rom_limitation: bool = False,
+    save_rcmg_to_json: Optional[str] = None,
+    include_standstills_prob: float = 0.0,
 ):
     """
     Main function for generating motion sequences with customizable configurations.
@@ -210,6 +212,7 @@ def main(
         embc_rom_limitation (bool, optional): If enabled then for each `MotionConfig` adds a second `MotionConfig` object
             where the global rotation is limited to stay within [-20°, 20°] from the initial random global orientation of
             the kinematic chain.
+        save_rcmg_to_json (str, optional): Save a deserialised RCMG representation in a json file with name `save_rcmg_to_json`
 
     Returns:
         None: This function generates motion sequences and saves them to the specified output path.
@@ -227,7 +230,7 @@ def main(
         _sys = sys
         for seg, dof in zip(segs, dofs):
             _sys = _change_joint_type(_sys, seg, dof)
-        syss.extend(randomize_sys.randomize_anchors(_sys, anchors))
+        syss.extend(randomize_anchors(_sys, anchors))
 
     if mot_art:
         dyn_sim = True
@@ -236,8 +239,13 @@ def main(
     if embc_rom_limitation:
         _replace_rom = lambda mconfig, add: _add_rom(mconfig) if add else mconfig
         configs = [_replace_rom(c, add) for c in configs for add in [False, True]]
+    if include_standstills_prob > 0.0:
+        configs = [
+            replace(c, include_standstills_prob=include_standstills_prob)
+            for c in configs
+        ]
 
-    ring.RCMG(
+    rcmg = ring.RCMG(
         syss,
         configs,
         add_X_imus=True,
@@ -257,7 +265,14 @@ def main(
         cor=True,
         finalize_fn=finalize_fn_factory(sys),
         sys_ml=sys,
-    ).to_folder(output_path, size, seed, overwrite=False)
+    )
+
+    if save_rcmg_to_json is not None:
+        rcmg.serialise_to_json(
+            ring.utils.parse_path(save_rcmg_to_json, extension="json")
+        )
+
+    rcmg.to_folder(output_path, size, seed, overwrite=False)
 
 
 if __name__ == "__main__":
